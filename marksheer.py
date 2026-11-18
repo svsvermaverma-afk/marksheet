@@ -210,7 +210,6 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                 result_status = f"अनुत्तीर्ण ({overall_pct}%)"
 
         pages_html += f"""
-        <!-- PAGE 1: OUTER COVER -->
         <div class="sheet">
             <div class="half-left">
                 <div class="box-border">
@@ -270,7 +269,6 @@ def build_marksheet_html(df, stream_name, is_preview=False):
             </div>
         </div>
 
-        <!-- PAGE 2: INSIDE MARKSHEET -->
         <div class="sheet inside-page">
             <div class="inside-header">
                 <h2>आदित्य बिड़ला इण्टरमीडिएट कॉलेज, रेणुकूट, सोनभद्र</h2>
@@ -341,7 +339,6 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                     </table>
                 </div>
 
-                <!-- CO-SCHOLASTIC TABLE -->
                 <div class="coschol-sec">
                     <div class="co-badge">सह शैक्षणिक मूल्यांकन</div>
                     <table class="co-table">
@@ -379,7 +376,7 @@ def build_marksheet_html(df, stream_name, is_preview=False):
         .sheet { box-shadow: 0 8px 24px rgba(0,0,0,0.45); transform-origin: top center; }
     """ if is_preview else ""
 
-    return f"""
+    html_doc = f"""
     <!DOCTYPE html>
     <html lang="hi">
     <head>
@@ -419,4 +416,132 @@ def build_marksheet_html(df, stream_name, is_preview=False):
         .school-header h3 {{ margin: 0 0 8px 0; font-size: 12pt; }}
         .main-badge {{ display: inline-block; background: #7a2020; color: #fff; font-size: 13pt; font-weight: 700; padding: 3px 24px; border-radius: 6px; }}
         .session-txt {{ font-weight: 700; font-size: 11.5pt; margin-top: 6px; }}
-        .student-fields {{ margin-top
+        .student-fields {{ margin-top: 12px; font-size: 10pt; font-weight: 600; }}
+        .field-row {{ border-bottom: 1px dotted #7a2020; padding: 5px 0 2px 0; display: flex; justify-content: space-between; }}
+        .val {{ color: #1a237e; font-weight: 700; padding-left: 6px; }}
+        .inside-page {{ flex-direction: column; padding: 6mm 8mm; }}
+        .inside-header {{ text-align: center; }}
+        .inside-header h2 {{ margin: 0; font-size: 15.5pt; }}
+        .sub-h {{ font-weight: 700; font-size: 10.5pt; }}
+        .stu-strip {{ display: flex; justify-content: space-between; font-size: 9.5pt; margin-top: 4px; border-bottom: 1px solid #7a2020; padding-bottom: 3px; }}
+        .inside-body {{ display: flex; gap: 6mm; margin-top: 5px; flex: 1; }}
+        .acad-sec {{ width: 62%; }}
+        .coschol-sec {{ width: 38%; }}
+        .table-caption {{ text-align: center; font-weight: 700; font-size: 11pt; margin-bottom: 3px; }}
+        .marks-table, .co-table, .sign-table {{ width: 100%; border-collapse: collapse; text-align: center; font-size: 8.2pt; }}
+        .marks-table th, .marks-table td, .co-table th, .co-table td, .sign-table td {{ border: 1px solid #7a2020; padding: 3.5px 2px; }}
+        .marks-table th {{ background-color: #f3e5be; font-weight: 700; }}
+        .left {{ text-align: left; padding-left: 5px !important; }}
+        .bold {{ font-weight: 700; }}
+        .sign-table {{ margin-top: 6px; font-size: 8.5pt; }}
+        .sig-line {{ margin-top: 11px; font-weight: 600; }}
+        .co-badge {{ background: #7a2020; color: #fff; text-align: center; font-weight: 700; font-size: 10pt; padding: 2px 12px; border-radius: 4px; width: 160px; margin: 0 auto 4px auto; }}
+        .co-table td {{ padding: 2.3px 4px; font-size: 8pt; }}
+        .cat-row td {{ background-color: #f3e5be; font-weight: 700; }}
+        {preview_css}
+    </style>
+    </head>
+    <body>{pages_html}</body>
+    </html>
+    """
+    return html_doc
+
+# ================= STREAMLIT UI =================
+st.title("🎓 ABIC Renukoot - Marksheet Generator")
+
+selected_stream = st.selectbox(
+    "📌 Step 1: Stream Chunein (Subject Formula Set Karne Ke Liye)",
+    list(STREAM_CONFIG.keys())
+)
+
+active_subs = STREAM_CONFIG[selected_stream]
+cols_info = st.columns(len(active_subs))
+for idx, (code, sname, has_pr, m_th, m_pr) in enumerate(active_subs):
+    cols_info[idx].info(f"**{sname}**\n\n{'Theory: '+str(m_th)+' + Prac: '+str(m_pr) if has_pr else 'Max Marks: '+str(m_th)}")
+
+st.markdown("### 📂 Step 2: Excel File Upload Karein")
+col_t1, col_t2 = st.columns([1, 2])
+with col_t1:
+    st.download_button(
+        label=f"📥 Download Sample Excel ({selected_stream})",
+        data=get_stream_excel_template(selected_stream),
+        file_name=f"ABIC_{selected_stream.replace(' ', '_')}_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+with col_t2:
+    uploaded_file = st.file_uploader("Marks Bhari Hui Excel (.xlsx) Upload Karein", type=["xlsx"])
+
+if uploaded_file:
+    df_uploaded = pd.read_excel(uploaded_file).fillna("")
+    df_uploaded["Roll_No_Str"] = df_uploaded["Roll_No"].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+    df_uploaded["Reg_No_Str"] = df_uploaded["Reg_No"].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+    df_uploaded["Class_Sec_Str"] = df_uploaded["Class_Sec"].astype(str).str.strip()
+
+    tab1, tab2 = st.tabs(["📚 Bulk Preview & All Download", "🔍 Single Student (By Class & Roll No / SR No)"])
+
+    with tab1:
+        st.success(f"✅ Total **{len(df_uploaded)} students** ka data load ho gaya hai.")
+        
+        col_b1, col_b2 = st.columns([1, 1])
+        with col_b1:
+            if st.button("🚀 Generate All Marksheets PDF (Bulk)", type="primary"):
+                with st.spinner(f"Sabhi {len(df_uploaded)} students ki marksheet PDF taiyar ho rahi hai..."):
+                    full_html = build_marksheet_html(df_uploaded, selected_stream, is_preview=False)
+                    st.session_state["bulk_pdf"] = HTML(string=full_html).write_pdf()
+                    st.session_state["bulk_count"] = len(df_uploaded)
+
+        with col_b2:
+            if "bulk_pdf" in st.session_state:
+                st.download_button(
+                    label=f"📥 Download All {st.session_state['bulk_count']} Marksheets (Single PDF)",
+                    data=st.session_state["bulk_pdf"],
+                    file_name=f"ABIC_{selected_stream.replace(' ', '_')}_All_Marksheets.pdf",
+                    mime="application/pdf"
+                )
+
+        st.markdown("---")
+        st.subheader(f"👁️ Sample Marksheet Preview (First Student: {df_uploaded.iloc[0]['Name']})")
+        preview_html = build_marksheet_html(df_uploaded.iloc[[0]], selected_stream, is_preview=True)
+        components.html(preview_html, height=1680, scrolling=True)
+
+    with tab2:
+        st.subheader("🔍 Class aur Roll No / SR No (Reg No) se Student Khojein")
+        available_classes = sorted(df_uploaded["Class_Sec_Str"].unique().tolist())
+        
+        sc1, sc2, sc3 = st.columns(3)
+        selected_class = sc1.selectbox("1. Class & Section Chunein", available_classes)
+        search_type = sc2.radio("2. Kis se khojna hai?", ["Roll Number", "SR Number (Reg No)"], horizontal=True)
+        search_val = sc3.text_input("3. Roll No ya SR No likhein", placeholder="Jaise: 44 ya 38940").strip()
+
+        class_df = df_uploaded[df_uploaded["Class_Sec_Str"] == selected_class]
+
+        if search_val:
+            if search_type == "Roll Number":
+                matched_df = class_df[class_df["Roll_No_Str"] == search_val]
+            else:
+                matched_df = class_df[class_df["Reg_No_Str"] == search_val]
+
+            if not matched_df.empty:
+                stu = matched_df.iloc[0]
+                st.success(f"🎯 Student Mila: **{stu['Name']}** | Class: **{stu['Class_Sec_Str']}** | Roll No: **{stu['Roll_No_Str']}** | SR No: **{stu['Reg_No_Str']}**")
+                
+                single_full_html = build_marksheet_html(matched_df.iloc[[0]], selected_stream, is_preview=False)
+                single_preview_html = build_marksheet_html(matched_df.iloc[[0]], selected_stream, is_preview=True)
+                
+                with st.spinner("Single Marksheet PDF taiyar ho rahi hai..."):
+                    single_pdf_bytes = HTML(string=single_full_html).write_pdf()
+                
+                st.download_button(
+                    label=f"📄 Download {stu['Name']} Marksheet PDF",
+                    data=single_pdf_bytes,
+                    file_name=f"{stu['Roll_No_Str']}_{stu['Name']}_Marksheet.pdf",
+                    mime="application/pdf"
+                )
+                
+                st.markdown("---")
+                st.subheader(f"👁️ Marksheet Preview: {stu['Name']}")
+                components.html(single_preview_html, height=1680, scrolling=True)
+            else:
+                st.error(f"❌ Class **{selected_class}** mein {search_type} **`{search_val}`** ka koi student nahi mila. Kripya number check karein.")
+        else:
+            st.info(f"ℹ️ Class **{selected_class}** mein kul **{len(class_df)} students** hain. Upar box mein **Roll No** ya **SR No** daalte hi marksheet dikh jayegi.")
