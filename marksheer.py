@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import io
 from weasyprint import HTML
@@ -6,7 +7,6 @@ from weasyprint import HTML
 st.set_page_config(page_title="ABIC Complete Marksheet System", layout="wide")
 
 # ================= STREAM & SUBJECT CONFIGURATION =================
-# Format: (Subject_Code, Hindi_Name, Has_Practical, Max_Theory, Max_Practical)
 STREAM_CONFIG = {
     "Class 11-12 Science (PCM / PCB)": [
         ("Sub1", "हिन्दी", False, 100, 0),
@@ -66,8 +66,6 @@ def fmt(val):
 # ================= FORMULA-BASED EXCEL TEMPLATE GENERATOR =================
 def get_stream_excel_template(stream_name):
     subjects = STREAM_CONFIG[stream_name]
-    
-    # Sample row dictionary
     sample = {
         "Roll_No": "44", "Reg_No": "38940", "Name": "Anandi Kumari Singh",
         "Father_Name": "Shriram Singh", "Mother_Name": "Lalita Devi",
@@ -75,16 +73,12 @@ def get_stream_excel_template(stream_name):
         "Mobile": "9450320524", "Aadhaar": "982931653622", "PEN_No": "21473874271",
         "Address": "Renukoot, Sonbhadra",
     }
-    
     for code, name, has_pr, max_th, max_pr in subjects:
-        # Monthly Tests (M1, M2, M3)
         sample[f"{code}_M1"] = 0
         sample[f"{code}_M2"] = 0
         sample[f"{code}_M3"] = 0
-        # Half Yearly (HY)
         sample[f"{code}_HY_Th"] = 56 if has_pr else 78
         sample[f"{code}_HY_Pr"] = 28 if has_pr else 0
-        # Annual (AN)
         sample[f"{code}_AN_Th"] = 0
         sample[f"{code}_AN_Pr"] = 0
 
@@ -98,22 +92,20 @@ def get_stream_excel_template(stream_name):
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name="Marks_Entry")
-        
-        # Add Reference Legend Sheet so teachers know which Sub1..Sub5 is which subject
         legend_data = [{"Column_Prefix": s[0], "Subject_Name": s[1], "Max_Theory": s[3], "Max_Practical": s[4]} for s in subjects]
         pd.DataFrame(legend_data).to_excel(writer, index=False, sheet_name="Subject_Guide")
-        
     return buffer.getvalue()
 
-# ================= PDF GENERATOR WITH FULL FORMULAS =================
-def generate_marksheet_pdf(df, stream_name):
+# ================= HTML BUILDER (USED FOR BOTH LIVE PREVIEW & BULK PDF) =================
+def build_marksheet_html(df, stream_name, is_preview=False):
     subjects = STREAM_CONFIG[stream_name]
     pages_html = ""
     
-    for _, row in df.iterrows():
+    # Preview mein sirf 1st student dikhayein taaki fast aur clean rahe
+    target_df = df.iloc[:1] if is_preview else df
+    
+    for _, row in target_df.iterrows():
         rows_html = ""
-        
-        # Grand Accumulators
         total_m_all = 0
         total_hy_all = 0
         total_an_all = 0
@@ -125,14 +117,12 @@ def generate_marksheet_pdf(df, stream_name):
         has_annual = False
         failed_subjects = 0
 
-        # Pre-check if monthly or annual marks exist for this student
         for code, _, _, _, _ in subjects:
             if (to_num(row.get(f"{code}_M1")) + to_num(row.get(f"{code}_M2")) + to_num(row.get(f"{code}_M3"))) > 0:
                 has_monthly = True
             if (to_num(row.get(f"{code}_AN_Th")) + to_num(row.get(f"{code}_AN_Pr"))) > 0:
                 has_annual = True
 
-        # Calculate each subject row dynamically
         for idx, (code, sub_name, has_pr, max_th, max_pr) in enumerate(subjects, start=1):
             m1 = to_num(row.get(f"{code}_M1"))
             m2 = to_num(row.get(f"{code}_M2"))
@@ -147,13 +137,10 @@ def generate_marksheet_pdf(df, stream_name):
             an_pr = to_num(row.get(f"{code}_AN_Pr")) if has_pr else 0
             an_tot = an_th + an_pr
             
-            # Complete Exam (Sampurna Pariksha) Formula
             sub_grand_th = m_tot + hy_th + an_th
             sub_grand_pr = hy_pr + an_pr
             sub_grand_tot = sub_grand_th + sub_grand_pr
             
-            # Determine Max Marks for Grading
-            # If Annual is entered, calculate out of 200 (or 200 + monthly max), else out of 100 (Half-Yearly)
             if has_annual:
                 max_possible = 200 + (30 if has_monthly else 0)
                 eval_marks = sub_grand_tot
@@ -190,7 +177,6 @@ def generate_marksheet_pdf(df, stream_name):
             </tr>
             """
 
-        # Moral & Sports Row (Grade Only)
         moral_grade = str(row.get('Moral_Sports_Grade', 'A')).strip() or 'A'
         rows_html += f"""
         <tr>
@@ -204,7 +190,6 @@ def generate_marksheet_pdf(df, stream_name):
         </tr>
         """
 
-        # Grand Total & Percentage Formula
         num_subs = len(subjects)
         if has_annual:
             grand_max = num_subs * (200 + (30 if has_monthly else 0))
@@ -216,7 +201,6 @@ def generate_marksheet_pdf(df, stream_name):
         overall_pct = round((final_obtained / grand_max) * 100, 2) if grand_max > 0 else 0
         overall_grade = get_grade(final_obtained, grand_max)
         
-        # Auto Result Formula
         if str(row.get('Result', '')).strip() != "":
             result_status = str(row.get('Result'))
         else:
@@ -392,7 +376,12 @@ def generate_marksheet_pdf(df, stream_name):
         </div>
         """
 
-    full_html = f"""
+    preview_css = """
+        body { background-color: #2b2b2b; padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        .sheet { box-shadow: 0 8px 24px rgba(0,0,0,0.45); transform-origin: top center; }
+    """ if is_preview else ""
+
+    return f"""
     <!DOCTYPE html>
     <html lang="hi">
     <head>
@@ -454,31 +443,31 @@ def generate_marksheet_pdf(df, stream_name):
         .co-badge {{ background: #7a2020; color: #fff; text-align: center; font-weight: 700; font-size: 10pt; padding: 2px 12px; border-radius: 4px; width: 160px; margin: 0 auto 4px auto; }}
         .co-table td {{ padding: 2.3px 4px; font-size: 8pt; }}
         .cat-row td {{ background-color: #f3e5be; font-weight: 700; }}
+        {preview_css}
     </style>
     </head>
     <body>{pages_html}</body>
     </html>
     """
-    return HTML(string=full_html).write_pdf()
 
 # ================= STREAMLIT UI =================
-st.title("🎓 ABIC Renukoot - Formula-Based Marksheet Generator")
+st.title("🎓 ABIC Renukoot - Marksheet Generator (Live Preview + Bulk Download)")
 
 selected_stream = st.selectbox(
-    "📌 Step 1: Class aur Stream Chunein (Isi ke hisab se subjects aur formulas set honge)",
+    "📌 Step 1: Class aur Stream Chunein",
     list(STREAM_CONFIG.keys())
 )
 
-# Show Active Subjects & Formula Info
 active_subs = STREAM_CONFIG[selected_stream]
 cols_info = st.columns(len(active_subs))
 for idx, (code, sname, has_pr, m_th, m_pr) in enumerate(active_subs):
     cols_info[idx].info(f"**{sname}**\n\n{'Theory: '+str(m_th)+' + Prac: '+str(m_pr) if has_pr else 'Max Marks: '+str(m_th)}")
 
-tab1, tab2 = st.tabs(["📂 Bulk Excel Upload (Poori Class)", "✍️ Single Student Quick Entry"])
+tab1, tab2 = st.tabs(["📂 Bulk Excel Upload (Preview + All Download)", "✍️ Single Student Entry (Preview + Download)"])
 
+# ---------------- TAB 1: BULK EXCEL UPLOAD ----------------
 with tab1:
-    st.subheader("Step 2: Is Stream ka Formula Template Download Karein")
+    st.subheader("Step 2: Is Stream ka Excel Template Download Karein")
     st.download_button(
         label=f"📥 Download Excel Template ({selected_stream})",
         data=get_stream_excel_template(selected_stream),
@@ -488,20 +477,44 @@ with tab1:
     
     st.subheader("Step 3: Marks Bhari Hui Excel File Upload Karein")
     uploaded_file = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"])
+    
     if uploaded_file:
         df_uploaded = pd.read_excel(uploaded_file).fillna("")
-        st.dataframe(df_uploaded.head())
-        if st.button("🚀 Generate All Marksheets PDF (Auto-Calculate)"):
-            with st.spinner("Sabhi students ke marks, percentage aur grades calculate ho rahe hain..."):
-                pdf_bytes = generate_marksheet_pdf(df_uploaded, selected_stream)
-            st.success(f"✅ {len(df_uploaded)} students ki marksheet PDF taiyar hai!")
-            st.download_button(
-                label="📄 Download Combined Print-Ready PDF",
-                data=pdf_bytes,
-                file_name=f"ABIC_{selected_stream.replace(' ', '_')}_Marksheets.pdf",
-                mime="application/pdf"
-            )
+        st.success(f"📊 Total **{len(df_uploaded)} students** ka data load ho gaya hai.")
+        
+        # Student selector for previewing any specific student before bulk download
+        student_names = [f"{i+1}. {r['Name']} (Roll: {r['Roll_No']})" for i, r in df_uploaded.iterrows()]
+        selected_preview_idx = st.selectbox(
+            "👁️ Download se pehle kisi bhi student ki marksheet preview karein:",
+            range(len(student_names)),
+            format_func=lambda x: student_names[x]
+        )
+        
+        col_btn1, col_btn2 = st.columns([1, 1])
+        with col_btn1:
+            if st.button("🚀 Generate All Marksheets PDF (Bulk)", type="primary"):
+                with st.spinner(f"Sabhi {len(df_uploaded)} students ki marksheet PDF taiyar ho rahi hai..."):
+                    full_html = build_marksheet_html(df_uploaded, selected_stream, is_preview=False)
+                    st.session_state["bulk_pdf"] = HTML(string=full_html).write_pdf()
+                    st.session_state["bulk_count"] = len(df_uploaded)
 
+        with col_btn2:
+            if "bulk_pdf" in st.session_state:
+                st.download_button(
+                    label=f"📥 Download All {st.session_state['bulk_count']} Marksheets (Single PDF)",
+                    data=st.session_state["bulk_pdf"],
+                    file_name=f"ABIC_{selected_stream.replace(' ', '_')}_All_Marksheets.pdf",
+                    mime="application/pdf"
+                )
+
+        # LIVE PREVIEW BOX (Always visible as soon as Excel is uploaded)
+        st.markdown("---")
+        st.subheader(f"👁️ Live Marksheet Preview: {student_names[selected_preview_idx]}")
+        preview_df = df_uploaded.iloc[[selected_preview_idx]]
+        preview_html = build_marksheet_html(preview_df, selected_stream, is_preview=True)
+        components.html(preview_html, height=1680, scrolling=True)
+
+# ---------------- TAB 2: SINGLE STUDENT ENTRY ----------------
 with tab2:
     st.subheader(f"Single Student Entry ({selected_stream})")
     with st.form("single_student_form"):
@@ -525,7 +538,7 @@ with tab2:
         pen = c11.text_input("PEN No", "21473874271")
         addr = c12.text_input("Address", "Renukoot, Sonbhadra")
         
-        st.markdown("#### Half-Yearly Marks Entry (Total, Percentage & Grade Automatic Calculate Honge)")
+        st.markdown("#### Half-Yearly Marks Entry")
         mark_inputs = {}
         cols_m = st.columns(len(active_subs))
         for idx, (code, sname, has_pr, m_th, m_pr) in enumerate(active_subs):
@@ -543,7 +556,7 @@ with tab2:
                 mark_inputs[f"{code}_AN_Th"] = 0
                 mark_inputs[f"{code}_AN_Pr"] = 0
 
-        submitted = st.form_submit_button("Generate Formula Marksheet PDF")
+        submitted = st.form_submit_button("👁️ Preview & Generate PDF")
 
     if submitted:
         row_dict = {
@@ -557,12 +570,17 @@ with tab2:
             "Attendance": "", "Session": "2025 - 2026"
         }
         single_df = pd.DataFrame([row_dict])
+        preview_single_html = build_marksheet_html(single_df, selected_stream, is_preview=True)
+        full_single_html = build_marksheet_html(single_df, selected_stream, is_preview=False)
+        
         with st.spinner("PDF taiyar ho rahi hai..."):
-            pdf_data = generate_marksheet_pdf(single_df, selected_stream)
-        st.success("✅ Formula-based Marksheet PDF taiyar hai!")
+            pdf_data = HTML(string=full_single_html).write_pdf()
+            
         st.download_button(
-            label="📄 Download PDF",
+            label="📄 Download This Marksheet PDF",
             data=pdf_data,
             file_name=f"{name}_Marksheet.pdf",
             mime="application/pdf"
         )
+        st.markdown("### 👁️ Live Preview")
+        components.html(preview_single_html, height=1680, scrolling=True)
