@@ -1,809 +1,684 @@
 import streamlit as st
-import pandas as pd
-import base64
-import os
 import streamlit.components.v1 as components
+import pandas as pd
+import io
+import os
+import base64
+from weasyprint import HTML
 
-st.set_page_config(page_title="पूर्ण प्रगति-पत्र - ABIC रेणुकूट", layout="wide")
+st.set_page_config(page_title="ABIC Complete Marksheet System", layout="wide")
 
-# GitHub repository mein rakhi logo.png ko Base64 mein convert karne ka function
-def get_logo_base64(image_path="logo.png"):
-    if os.path.exists(image_path):
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode("utf-8")
-    return ""
-
-logo_b64 = get_logo_base64("logo.png")
-logo_html = (
-    f'<img src="data:image/png;base64,{logo_b64}" class="school-logo" alt="ABIC Logo">'
-    if logo_b64
-    else '<div style="font-weight:bold; color:#7c2d12; margin-bottom:5px;">[logo.png अपलोड करें]</div>'
-)
-
-st.title("📄 पूर्ण प्रगति-पत्र (2-Page Full Marksheet) जनरेटर")
-
-# Sidebar Settings
-with st.sidebar:
-    st.header("1. डेटा अपलोड करें")
-    uploaded_file = st.file_uploader("Excel (.xlsx) या CSV फाइल चुनें", type=["xlsx", "xls", "csv"])
-    session_year = st.text_input("शैक्षणिक सत्र", value="2026 - 2027")
-    stream_type = st.selectbox("वर्ग / संकाय चुनें", ["विज्ञान वर्ग (Science - 11/12)", "वाणिज्य वर्ग (Commerce - 11/12)", "कला वर्ग (Arts - 11/12)", "हाईस्कूल / जूनियर (6-10)"])
-
-# Default Sample Data
-student_data = {
-    "name": "ABHIMANYU YADAV",
-    "roll": "1",
-    "house": "MARTAND",
-    "father": "SRILAL YADAV",
-    "mother": "SONA DEVI",
-    "dob": "2008-11-19",
-    "class_sec": "12 B",
-    "mobile": "9889853760",
-    "reg_no": "38940",
-    "aadhaar": "982931653622",
-    "pen": "21473874271",
-    "address": "Renukoot, Sonbhadra (U.P.)"
+# ================= STREAM & SUBJECT CONFIGURATION =================
+STREAM_CONFIG = {
+    "Class 11-12 Science (PCM / PCB)": [
+        ("Sub1", "हिन्दी", False, 100, 0),
+        ("Sub2", "अंग्रेजी", False, 100, 0),
+        ("Sub3", "गणित / जीव विज्ञान", False, 100, 0),
+        ("Sub4", "भौतिक विज्ञान", True, 70, 30),
+        ("Sub5", "रसायन विज्ञान", True, 70, 30),
+    ],
+    "Class 11-12 Commerce": [
+        ("Sub1", "हिन्दी", False, 100, 0),
+        ("Sub2", "अंग्रेजी", False, 100, 0),
+        ("Sub3", "व्यवसाय अध्ययन (BST)", False, 100, 0),
+        ("Sub4", "लेखाशास्त्र (Accountancy)", False, 100, 0),
+        ("Sub5", "कम्प्यूटर", True, 70, 30),
+    ],
+    "Class 11-12 Arts": [
+        ("Sub1", "हिन्दी", False, 100, 0),
+        ("Sub2", "अंग्रेजी", False, 100, 0),
+        ("Sub3", "इतिहास (History)", False, 100, 0),
+        ("Sub4", "समाजशास्त्र (Sociology)", False, 100, 0),
+        ("Sub5", "कम्प्यूटर", True, 70, 30),
+    ],
+    "Class 11-12 Home Science": [
+        ("Sub1", "हिन्दी", False, 100, 0),
+        ("Sub2", "अंग्रेजी", False, 100, 0),
+        ("Sub3", "गृह विज्ञान (Home Science)", True, 70, 30),
+        ("Sub4", "कम्प्यूटर", True, 70, 30),
+        ("Sub5", "समाजशास्त्र (Sociology)", False, 100, 0),
+    ]
 }
 
-# Default Subjects based on Stream
-if "विज्ञान" in stream_type:
-    default_subjects = ["सामान्य हिन्दी", "अंग्रेजी (English)", "भौतिक विज्ञान (Physics)", "रसायन विज्ञान (Chemistry)", "गणित / जीव विज्ञान", "खेल एवं शारीरिक शिक्षा"]
-elif "वाणिज्य" in stream_type:
-    default_subjects = ["सामान्य हिन्दी", "अंग्रेजी (English)", "लेखाशास्त्र (Accountancy)", "व्यवसाय अध्ययन (Business Studies)", "अर्थशास्त्र (Economics)", "खेल एवं शारीरिक शिक्षा"]
-elif "कला" in stream_type:
-    default_subjects = ["सामान्य हिन्दी", "अंग्रेजी (English)", "इतिहास (History)", "भूगोल (Geography)", "नागरिक शास्त्र (Civics)", "खेल एवं शारीरिक शिक्षा"]
-else:
-    default_subjects = ["हिन्दी", "अंग्रेजी (English)", "गणित (Mathematics)", "विज्ञान (Science)", "सामाजिक विज्ञान", "कला / कम्प्यूटर"]
+# ================= LOGO LOADER =================
+def get_logo_base64(uploaded_logo=None):
+    if uploaded_logo is not None:
+        return base64.b64encode(uploaded_logo.getvalue()).decode("utf-8")
+    for fname in ["logo.png", "logo.jpg", "logo.jpeg", "LOGO.png"]:
+        if os.path.exists(fname):
+            with open(fname, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+    return ""
 
-marks_rows = []
-for sub in default_subjects:
-    marks_rows.append({
-        "subject": sub,
-        "q_max": "20", "q_obt": "",
-        "h_max": "100", "h_obt": "",
-        "a_max": "100", "a_obt": "",
-        "total_max": "220", "total_obt": "",
-        "grade": ""
-    })
+# ================= FORMULA & DISPLAY HELPERS =================
+def get_grade(marks, max_marks):
+    if max_marks <= 0:
+        return ""
+    pct = (marks / max_marks) * 100
+    if pct >= 91: return "A1"
+    elif pct >= 81: return "A2"
+    elif pct >= 71: return "B1"
+    elif pct >= 61: return "B2"
+    elif pct >= 51: return "C1"
+    elif pct >= 41: return "C2"
+    elif pct >= 33: return "D"
+    else: return "E"
 
-if uploaded_file is not None:
+def parse_cell(val):
+    if pd.isna(val):
+        return 0, "", False
+    s = str(val).strip()
+    if s == "":
+        return 0, "", False
+    if s.upper() == "AB":
+        return 0, "AB", True
     try:
-        if uploaded_file.name.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
+        num = int(round(float(s)))
+        return num, str(num), True
+    except:
+        return 0, s, True
+
+# ================= EXCEL TEMPLATE GENERATOR =================
+def get_stream_excel_template(stream_name):
+    subjects = STREAM_CONFIG[stream_name]
+    sample = {
+        "Roll_No": "44", "Reg_No": "38940", "Name": "Anandi Kumari Singh",
+        "Father_Name": "Shriram Singh", "Mother_Name": "Lalita Devi",
+        "DOB": "26-11-2009", "Class_Sec": "11 'B'", "House": "Arun",
+        "Mobile": "9450320524", "Aadhaar": "982931653622", "PEN_No": "21473874271",
+        "Address": "Jhopadi Near Bus Stand, Renukoot",
+    }
+    for code, name, has_pr, max_th, max_pr in subjects:
+        sample[f"{code}_M1"] = ""
+        sample[f"{code}_M2"] = ""
+        sample[f"{code}_M3"] = ""
+        sample[f"{code}_HY_Th"] = 56 if has_pr else 78
+        sample[f"{code}_HY_Pr"] = 28 if has_pr else ""
+        sample[f"{code}_AN_Th"] = ""
+        sample[f"{code}_AN_Pr"] = ""
+
+    sample["Moral_Sports_HY"] = "A"
+    sample["Moral_Sports_AN"] = ""
+    for i in range(1, 16):
+        sample[f"CS_{i}"] = "A"
+    sample["Attendance_HY"] = "110/120"
+    sample["Attendance_AN"] = ""
+    sample["Reopen_Date"] = ""
+    sample["Final_Class"] = ""
+    sample["Session"] = "2025 - 2026"
+
+    df = pd.DataFrame([sample])
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name="Marks_Entry")
+        legend_data = [{"Column_Prefix": s[0], "Subject_Name": s[1], "Max_Theory": s[3], "Max_Practical": s[4]} for s in subjects]
+        pd.DataFrame(legend_data).to_excel(writer, index=False, sheet_name="Subject_Guide")
+    return buffer.getvalue()
+
+# ================= HTML BUILDER =================
+def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
+    subjects = STREAM_CONFIG[stream_name]
+    pages_html = ""
+    target_df = df.iloc[:1] if is_preview else df
+    
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="school-logo" />' if logo_b64 else '<div style="height:42px;"></div>'
+    
+    for _, row in target_df.iterrows():
+        rows_html = ""
+        total_m_all = 0
+        total_hy_all = 0
+        total_an_all = 0
+        total_grand_all = 0
+        
+        has_any_monthly = False
+        has_any_annual = False
+        hy_failed_subs = 0
+        final_failed_subs = 0
+
+        for code, _, _, _, _ in subjects:
+            for col_suffix in ["M1", "M2", "M3"]:
+                _, _, ent = parse_cell(row.get(f"{code}_{col_suffix}"))
+                if ent:
+                    has_any_monthly = True
+            for col_suffix in ["AN_Th", "AN_Pr"]:
+                _, _, ent = parse_cell(row.get(f"{code}_{col_suffix}"))
+                if ent:
+                    has_any_annual = True
+
+        for idx, (code, sub_name, has_pr, max_th, max_pr) in enumerate(subjects, start=1):
+            # 1. Monthly Test (Not added in Sampoorn)
+            m1_num, m1_disp, m1_ent = parse_cell(row.get(f"{code}_M1"))
+            m2_num, m2_disp, m2_ent = parse_cell(row.get(f"{code}_M2"))
+            m3_num, m3_disp, m3_ent = parse_cell(row.get(f"{code}_M3"))
+            
+            m_any_ent = m1_ent or m2_ent or m3_ent
+            m_tot_num = m1_num + m2_num + m3_num
+            if m_any_ent:
+                m_tot_disp = "AB" if (m1_disp == "AB" and m2_disp == "AB" and m3_disp == "AB") else str(m_tot_num)
+            else:
+                m_tot_disp = ""
+
+            # 2. Half-Yearly Exam
+            hy_th_num, hy_th_disp, hy_th_ent = parse_cell(row.get(f"{code}_HY_Th"))
+            if has_pr:
+                hy_pr_num, hy_pr_disp, hy_pr_ent = parse_cell(row.get(f"{code}_HY_Pr"))
+            else:
+                hy_pr_num, hy_pr_disp, hy_pr_ent = 0, "", False
+            
+            hy_any_ent = hy_th_ent or hy_pr_ent
+            hy_tot_num = hy_th_num + hy_pr_num
+            if hy_any_ent:
+                hy_tot_disp = "AB" if (hy_th_disp == "AB" and (not has_pr or hy_pr_disp == "AB")) else str(hy_tot_num)
+            else:
+                hy_tot_disp = ""
+
+            if hy_any_ent and get_grade(hy_tot_num, 100) == "E":
+                hy_failed_subs += 1
+
+            # 3. Annual Exam
+            an_th_num, an_th_disp, an_th_ent = parse_cell(row.get(f"{code}_AN_Th"))
+            if has_pr:
+                an_pr_num, an_pr_disp, an_pr_ent = parse_cell(row.get(f"{code}_AN_Pr"))
+            else:
+                an_pr_num, an_pr_disp, an_pr_ent = 0, "", False
+            
+            an_any_ent = an_th_ent or an_pr_ent
+            an_tot_num = an_th_num + an_pr_num
+            if has_any_annual and an_any_ent:
+                an_tot_disp = "AB" if (an_th_disp == "AB" and (not has_pr or an_pr_disp == "AB")) else str(an_tot_num)
+            else:
+                an_tot_disp = ""
+
+            # 4. Sampoorn Pariksha (HY + AN only)
+            sub_grand_th_num = hy_th_num + an_th_num
+            sub_grand_pr_num = hy_pr_num + an_pr_num
+            sub_grand_tot_num = hy_tot_num + an_tot_num
+
+            if has_any_annual:
+                if has_pr:
+                    grand_th_disp = "AB" if (hy_th_disp == "AB" and an_th_disp == "AB") else str(sub_grand_th_num)
+                    grand_pr_disp = "AB" if (hy_pr_disp == "AB" and an_pr_disp == "AB") else str(sub_grand_pr_num)
+                else:
+                    grand_th_disp = ""
+                    grand_pr_disp = ""
+                
+                grand_tot_disp = "AB" if (hy_tot_disp == "AB" and an_tot_disp == "AB") else str(sub_grand_tot_num)
+                eval_marks = sub_grand_tot_num
+                max_possible = 200
+            else:
+                grand_th_disp = ""
+                grand_pr_disp = ""
+                grand_tot_disp = ""
+                eval_marks = hy_tot_num
+                max_possible = 100
+
+            grade = get_grade(eval_marks, max_possible) if (hy_any_ent or an_any_ent) else ""
+            if has_any_annual and grade == "E":
+                final_failed_subs += 1
+
+            total_m_all += m_tot_num
+            total_hy_all += hy_tot_num
+            total_an_all += an_tot_num
+            total_grand_all += sub_grand_tot_num
+
+            rows_html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td class="left">{sub_name}</td>
+                <td>{m1_disp}</td><td>{m2_disp}</td><td>{m3_disp}</td><td class="bold">{m_tot_disp}</td>
+                <td>{hy_th_disp if has_pr else ''}</td>
+                <td>{hy_pr_disp if has_pr else ''}</td>
+                <td class="bold">{hy_tot_disp}</td>
+                <td>{an_th_disp if (has_any_annual and has_pr) else ''}</td>
+                <td>{an_pr_disp if (has_any_annual and has_pr) else ''}</td>
+                <td class="bold">{an_tot_disp}</td>
+                <td>{grand_th_disp}</td>
+                <td>{grand_pr_disp}</td>
+                <td class="bold">{grand_tot_disp}</td>
+                <td class="bold">{grade}</td>
+            </tr>
+            """
+
+        moral_hy = str(row.get('Moral_Sports_HY', row.get('Moral_Sports_Grade', 'A'))).strip() or 'A'
+        moral_an = str(row.get('Moral_Sports_AN', '')).strip()
+        if has_any_annual and not moral_an:
+            moral_an = moral_hy
+        final_moral_grade = moral_an if has_any_annual else moral_hy
+
+        rows_html += f"""
+        <tr>
+            <td>6</td>
+            <td class="left">नैतिक, खेल एवं शारीरिक शिक्षा</td>
+            <td></td><td></td><td></td><td></td>
+            <td></td><td></td><td class="bold">{moral_hy}</td>
+            <td></td><td></td><td class="bold">{moral_an if has_any_annual else ''}</td>
+            <td></td><td></td><td></td>
+            <td class="bold">{final_moral_grade}</td>
+        </tr>
+        """
+
+        num_subs = len(subjects)
+        
+        # PART 1: HALF-YEARLY RESULT
+        hy_max = num_subs * 100
+        hy_pct = round((total_hy_all / hy_max) * 100, 2) if hy_max > 0 else 0
+        hy_overall_grade = get_grade(total_hy_all, hy_max)
+        if hy_failed_subs == 0:
+            hy_result_txt = f"उत्तीर्ण ({hy_pct}%)"
+        elif hy_failed_subs == 1:
+            hy_result_txt = f"पूरक ({hy_pct}%)"
         else:
-            df = pd.read_excel(uploaded_file)
+            hy_result_txt = f"अनुत्तीर्ण ({hy_pct}%)"
 
-        df.columns = df.columns.str.strip()
-        name_col = next((c for c in df.columns if "name" in c.lower() or "नाम" in c), df.columns[0])
-        selected_student = st.sidebar.selectbox("विद्यार्थी चुनें:", df[name_col].astype(str).tolist())
-        row = df[df[name_col].astype(str) == selected_student].iloc[0]
+        # PART 2: ANNUAL RESULT
+        if has_any_annual:
+            grand_max = num_subs * 200
+            final_pct = round((total_grand_all / grand_max) * 100, 2) if grand_max > 0 else 0
+            overall_grade = get_grade(total_grand_all, grand_max)
+            if str(row.get('Result', '')).strip() != "":
+                an_result_txt = str(row.get('Result'))
+            else:
+                if final_failed_subs == 0:
+                    an_result_txt = f"उत्तीर्ण ({final_pct}%)"
+                elif final_failed_subs == 1:
+                    an_result_txt = f"पूरक ({final_pct}%)"
+                else:
+                    an_result_txt = f"अनुत्तीर्ण ({final_pct}%)"
+            remark_line = f"वार्षिक प्रतिशत: <b>{final_pct}%</b><br>समग्र ग्रेड: <b>{overall_grade}</b>"
+        else:
+            overall_grade = hy_overall_grade
+            an_result_txt = ""
+            remark_line = f"अर्द्धवार्षिक प्रतिशत: <b>{hy_pct}%</b><br>समग्र ग्रेड: <b>{hy_overall_grade}</b>"
 
-        def get_val(keywords, default=""):
-            for col in df.columns:
-                if any(k in col.lower() for k in keywords):
-                    val = str(row[col])
-                    if val.lower() == "nan":
-                        return ""
-                    return val.replace(" 00:00:00", "").strip()
-            return default
+        att_hy = str(row.get('Attendance_HY', row.get('Attendance', ''))).strip()
+        att_an = str(row.get('Attendance_AN', '')).strip() if has_any_annual else ""
+        reopen_dt = str(row.get('Reopen_Date', '')).strip() or "......................."
+        final_cls = str(row.get('Final_Class', '')).strip()
 
-        student_data["name"] = get_val(["student", "name", "छात्र"], "")
-        student_data["roll"] = get_val(["roll", "अनुक्रमांक"], "")
-        student_data["house"] = get_val(["house", "nilay", "निलय"], "")
-        student_data["father"] = get_val(["father", "पिता"], "")
-        student_data["mother"] = get_val(["mother", "माता"], "")
-        student_data["dob"] = get_val(["dob", "birth", "जन्म"], "")
-        student_data["class_sec"] = get_val(["class", "कक्षा"], "")
-        student_data["mobile"] = get_val(["mobile", "phone", "मोबाइल"], "")
-        student_data["reg_no"] = get_val(["reg", "पंजीकरण"], "")
-        student_data["aadhaar"] = get_val(["aadhar", "aadhaar", "आधार"], "")
-        student_data["pen"] = get_val(["pen", "पेन"], "")
-        student_data["address"] = get_val(["address", "पता"], "")
+        pages_html += f"""
+        <!-- PAGE 1: OUTER COVER (EXACT A4 LANDSCAPE) -->
+        <div class="sheet">
+            <div class="half-left">
+                <div class="box-border">
+                    <div class="sec-title">शैक्षिक मूल्यांकन ग्रेडिंग सिस्टम (प्रतिशत में)</div>
+                    <table class="grid-table">
+                        <tr><td>91-100</td><td>81-90</td><td>71-80</td><td>61-70</td><td>51-60</td><td>41-50</td><td>33-40</td><td>0-32</td></tr>
+                        <tr class="bold"><td>A1</td><td>A2</td><td>B1</td><td>B2</td><td>C1</td><td>C2</td><td>D</td><td>E</td></tr>
+                    </table>
 
-        # Agar Excel mein subject columns hain toh unke marks bhi fetch karein
-        for item in marks_rows:
-            sub_key = item["subject"].split("(")[0].strip().lower()
-            for col in df.columns:
-                if sub_key in col.lower() or any(w in col.lower() for w in item["subject"].lower().replace("(", "").replace(")", "").split() if len(w) > 3):
-                    val = str(row[col]).replace(" 00:00:00", "").strip()
-                    if val.lower() != "nan":
-                        item["h_obt"] = val
-                        break
+                    <div class="sec-title" style="margin-top:16px;">जीवन कौशल व्यवहार एवं जीवन मूल्य तथा अभिरुचि मूल्यांकन (ग्रेडिंग सिस्टम)</div>
+                    <table class="grid-table">
+                        <tr class="bold"><td>A</td><td>B</td><td>C</td><td>D</td><td>E</td></tr>
+                        <tr><td>उत्कृष्ट</td><td>अति उत्तम</td><td>उत्तम</td><td>संतोषजनक</td><td>सुधार अपेक्षित</td></tr>
+                    </table>
 
-    except Exception as e:
-        st.error(f"फाइल पढ़ने में त्रुटि: {e}")
+                    <div class="badge-center">-: सामान्य निर्देश :-</div>
+                    <ol class="inst-list">
+                        <li>संरक्षक अपने पाल्य/पाल्या के अर्द्धवार्षिक प्राप्तांक देखकर, इस प्रगति पत्र पर हस्ताक्षर करके तीन दिन के अंदर विद्यालय में कक्षा अध्यापक के पास जमा कर दें।</li>
+                        <li>इस प्रगति पत्र के खो जाने पर दूसरी प्रतिलिपि के लिए ................... रुपये का शुल्क देना पड़ेगा।</li>
+                        <li>प्रगति पत्र पर अंकित प्राप्तांक के साथ किसी भी तरह की छेड़छाड़ न की जाए।</li>
+                    </ol>
+                </div>
+            </div>
 
-# Build Marks Table HTML rows
-marks_table_rows_html = ""
-for idx, m in enumerate(marks_rows, 1):
-    marks_table_rows_html += f"""
-    <tr>
-      <td>{idx}</td>
-      <td class="sub-name" contenteditable="true">{m['subject']}</td>
-      <td contenteditable="true">{m['q_max']}</td>
-      <td class="blue-text" contenteditable="true">{m['q_obt']}</td>
-      <td contenteditable="true">{m['h_max']}</td>
-      <td class="blue-text" contenteditable="true">{m['h_obt']}</td>
-      <td contenteditable="true">{m['a_max']}</td>
-      <td class="blue-text" contenteditable="true">{m['a_obt']}</td>
-      <td contenteditable="true">{m['total_max']}</td>
-      <td class="blue-text" contenteditable="true">{m['total_obt']}</td>
-      <td class="blue-text" contenteditable="true">{m['grade']}</td>
-    </tr>
+            <div class="half-right">
+                <div class="box-border front-cover">
+                    <div class="top-meta">
+                        <div style="text-align:center;">
+                            <div>विद्यालय की वेबसाइट</div>
+                            <div class="meta-box">www.adityabirlaschools.co.in/abic-renukoot</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div>विद्यालय का कोड</div>
+                            <div class="meta-box"><b>1023</b></div>
+                        </div>
+                    </div>
+                    <div class="school-header">
+                        {logo_html}
+                        <h1>आदित्य बिड़ला इण्टरमीडिएट कॉलेज</h1>
+                        <h3>रेणुकूट, सोनभद्र (उ०प्र०)</h3>
+                        <div class="main-badge">प्रगति-पत्र</div>
+                        <div class="session-txt">शैक्षणिक सत्र {row.get('Session', '2025 - 2026')}</div>
+                    </div>
+
+                    <div class="student-fields">
+                        <div class="field-row">छात्र / छात्रा का नाम : <span class="val">{row.get('Name', '')}</span></div>
+                        <div class="field-row">
+                            <span style="width:52%;">अनुक्रमांक : <span class="val">{row.get('Roll_No', '')}</span></span>
+                            <span style="width:48%;">निलय : <span class="val">{row.get('House', '')}</span></span>
+                        </div>
+                        <div class="field-row">पिता का नाम : <span class="val">{row.get('Father_Name', '')}</span></div>
+                        <div class="field-row">माता का नाम : <span class="val">{row.get('Mother_Name', '')}</span></div>
+                        <div class="field-row">
+                            <span style="width:52%;">जन्मतिथि : <span class="val">{row.get('DOB', '')}</span></span>
+                            <span style="width:48%;">कक्षा एवं वर्ग : <span class="val">{row.get('Class_Sec', '')}</span></span>
+                        </div>
+                        <div class="field-row">मोबाइल नंबर : <span class="val">{row.get('Mobile', '')}</span></div>
+                        <div class="field-row">छात्र पंजीकरण संख्या : <span class="val">{row.get('Reg_No', '')}</span></div>
+                        <div class="field-row">आधार संख्या : <span class="val">{row.get('Aadhaar', '')}</span></div>
+                        <div class="field-row">पेन संख्या (PEN No.) : <span class="val">{row.get('PEN_No', '')}</span></div>
+                        <div class="field-row">पता : <span class="val">{row.get('Address', '')}</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE 2: INSIDE MARKSHEET (EXACT A4 LANDSCAPE) -->
+        <div class="sheet inside-page">
+            <div class="inside-header">
+                <h2>आदित्य बिड़ला इण्टरमीडिएट कॉलेज, रेणुकूट, सोनभद्र</h2>
+                <div class="sub-h">प्रगति पत्र विवरण सत्र {row.get('Session', '2025 - 2026')}</div>
+                <div class="stu-strip">
+                    <span>छात्र/छात्रा का नाम: <b>{row.get('Name', '')}</b></span>
+                    <span>छात्र पंजिका संख्या: <b>{row.get('Reg_No', '')}</b></span>
+                    <span>अनुक्रमांक: <b>{row.get('Roll_No', '')}</b></span>
+                    <span>कक्षा एवं वर्ग: <b>{row.get('Class_Sec', '')}</b></span>
+                </div>
+            </div>
+
+            <div class="inside-body">
+                <div class="acad-sec">
+                    <div class="table-caption">शैक्षिक मूल्यांकन</div>
+                    <table class="marks-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">क्र.</th>
+                                <th rowspan="2" style="width:102px;">विषय</th>
+                                <th colspan="4">मासिक परीक्षा</th>
+                                <th colspan="3">अर्द्धवार्षिक परीक्षा</th>
+                                <th colspan="3">वार्षिक परीक्षा</th>
+                                <th colspan="3">सम्पूर्ण परीक्षा</th>
+                                <th rowspan="2">ग्रेड</th>
+                            </tr>
+                            <tr>
+                                <th>प्र.</th><th>द्वि.</th><th>तृ.</th><th>योग</th>
+                                <th>सैद्ध.</th><th>प्रायो.</th><th>योग</th>
+                                <th>सैद्ध.</th><th>प्रायो.</th><th>योग</th>
+                                <th>सैद्ध.</th><th>प्रायो.</th><th>योग</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows_html}
+                            <tr class="bold" style="background-color:#f9efd2;">
+                                <td colspan="2">योग (Total)</td>
+                                <td colspan="4">{str(total_m_all) if has_any_monthly else ""}</td>
+                                <td colspan="3">{total_hy_all} / {hy_max}</td>
+                                <td colspan="3">{f"{total_an_all} / {hy_max}" if has_any_annual else ""}</td>
+                                <td colspan="3">{f"{total_grand_all} / {num_subs*200}" if has_any_annual else ""}</td>
+                                <td>{overall_grade}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <table class="sign-table">
+                        <tr style="background-color:#f3e5be; font-weight:700;">
+                            <td style="width:35%;">अर्द्धवार्षिक परीक्षा विवरण</td>
+                            <td style="width:30%;">विशेष विवरण</td>
+                            <td style="width:35%;">वार्षिक / सम्पूर्ण विवरण</td>
+                        </tr>
+                        <tr>
+                            <td style="text-align:left; vertical-align:top;">
+                                <div>उपस्थिति : <b>{att_hy}</b></div>
+                                <div>परीक्षाफल : <b>{hy_result_txt}</b></div>
+                                <div class="sig-line">ह० कक्षाध्यापक</div>
+                                <div class="sig-line">ह० निरीक्षक</div>
+                                <div class="sig-line">ह० प्रधानाचार्य</div>
+                                <div class="sig-line">ह० अभिभावक</div>
+                            </td>
+                            <td style="vertical-align:top;">
+                                <div style="margin-top:8px; font-size:7.8pt; line-height:1.5;">{remark_line}</div>
+                            </td>
+                            <td style="text-align:left; vertical-align:top;">
+                                <div>उपस्थिति : <b>{att_an}</b></div>
+                                <div>परीक्षाफल : <b>{an_result_txt}</b></div>
+                                <div class="sig-line">ह० कक्षाध्यापक</div>
+                                <div class="sig-line">ह० निरीक्षक</div>
+                                <div class="sig-line">ह० प्रधानाचार्य</div>
+                                <div class="sig-line">ह० अभिभावक</div>
+                            </td>
+                        </tr>
+                    </table>
+                    <div class="reopen-note">सूचना - विद्यालय दिनांक <b>{reopen_dt}</b> को खुलेगा।</div>
+                </div>
+
+                <div class="coschol-sec">
+                    <div class="co-badge">सह शैक्षणिक मूल्यांकन</div>
+                    <table class="co-table">
+                        <thead>
+                            <tr><th style="width:26px;">क्रम</th><th>मूल्यांकन का क्षेत्र</th><th style="width:36px;">ग्रेड</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr class="cat-row"><td colspan="3">जीवन कौशल</td></tr>
+                            <tr><td>1</td><td class="left">सृजनात्मकता</td><td class="bold">{row.get('CS_1','A')}</td></tr>
+                            <tr><td>2</td><td class="left">प्रभावी सम्प्रेषण</td><td class="bold">{row.get('CS_2','A')}</td></tr>
+                            <tr><td>3</td><td class="left">निर्णय लेने की क्षमता एवं नेतृत्व क्षमता</td><td class="bold">{row.get('CS_3','A')}</td></tr>
+                            <tr><td>4</td><td class="left">जिज्ञासा, तार्किक चिंतन एवं समस्या का समाधान</td><td class="bold">{row.get('CS_4','A')}</td></tr>
+                            <tr><td>5</td><td class="left">तनाव प्रबन्धन</td><td class="bold">{row.get('CS_5','A')}</td></tr>
+                            <tr class="cat-row"><td colspan="3">व्यवहार एवं जीवन मूल्य</td></tr>
+                            <tr><td>6</td><td class="left">शिक्षकों से व्यवहार</td><td class="bold">{row.get('CS_6','A')}</td></tr>
+                            <tr><td>7</td><td class="left">सहपाठियों से व्यवहार</td><td class="bold">{row.get('CS_7','A')}</td></tr>
+                            <tr><td>8</td><td class="left">शिष्टाचार, अनुशासन, समयबद्धता</td><td class="bold">{row.get('CS_8','A')}</td></tr>
+                            <tr><td>9</td><td class="left">व्यक्तिगत एवं विद्यालयी स्वच्छता</td><td class="bold">{row.get('CS_9','A')}</td></tr>
+                            <tr><td>10</td><td class="left">पर्यावरण के प्रति जागरूकता</td><td class="bold">{row.get('CS_10','A')}</td></tr>
+                            <tr><td>11</td><td class="left">सहयोग, सामूहिकता, सहानुभूति</td><td class="bold">{row.get('CS_11','A')}</td></tr>
+                            <tr class="cat-row"><td colspan="3">अभिरुचि</td></tr>
+                            <tr><td>12</td><td class="left">खेल एवं योग</td><td class="bold">{row.get('CS_12','A')}</td></tr>
+                            <tr><td>13</td><td class="left">पाठ्य सहगामी गतिविधियाँ</td><td class="bold">{row.get('CS_13','A')}</td></tr>
+                            <tr><td>14</td><td class="left">कला / संगीत / साहित्यिक गतिविधियाँ</td><td class="bold">{row.get('CS_14','A')}</td></tr>
+                            <tr><td>15</td><td class="left">वैज्ञानिक अभिरुचि</td><td class="bold">{row.get('CS_15','A')}</td></tr>
+                            <tr><td colspan="3" class="left bold" style="padding:3px 5px;">अंतिम कक्षा : <span class="val">{final_cls}</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        """
+
+    preview_css = """
+        body { background-color: #2b2b2b; padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        .sheet { box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
+    """ if is_preview else ""
+
+    html_doc = f"""
+    <!DOCTYPE html>
+    <html lang="hi">
+    <head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        @page {{
+            size: 297mm 210mm;
+            margin: 0;
+        }}
+        * {{
+            box-sizing: border-box;
+        }}
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: 'Noto Sans Devanagari', sans-serif;
+            color: #6b1d1d;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
+        .sheet {{
+            width: 297mm;
+            height: 209.5mm;
+            background-color: #fbf5df;
+            padding: 6mm 7mm;
+            display: flex;
+            overflow: hidden;
+            page-break-after: always;
+            page-break-inside: avoid;
+        }}
+        .sheet:last-child {{
+            page-break-after: auto;
+        }}
+        .half-left, .half-right {{
+            width: 50%;
+            height: 100%;
+        }}
+        .half-left {{ padding-right: 4.5mm; border-right: 1px dashed #999; }}
+        .half-right {{ padding-left: 4.5mm; }}
+        .box-border {{
+            border: 2px solid #7a2020;
+            height: 100%;
+            padding: 4.5mm 5.5mm;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }}
+        .sec-title {{ text-align: center; font-weight: 700; font-size: 10.5pt; margin-bottom: 5px; }}
+        .grid-table {{ width: 100%; border-collapse: collapse; text-align: center; font-size: 9pt; }}
+        .grid-table td {{ border: 1px solid #7a2020; padding: 4px 2px; }}
+        .badge-center {{
+            background: #7a2020; color: #fff; font-weight: 700; text-align: center;
+            width: 145px; margin: 14px auto 8px auto; padding: 3px 10px; border-radius: 4px; font-size: 10pt;
+        }}
+        .inst-list {{ font-size: 9pt; line-height: 1.65; padding-left: 16px; margin: 0 0 auto 0; }}
+        .top-meta {{ display: flex; justify-content: space-between; font-size: 7pt; }}
+        .meta-box {{ border: 1px solid #7a2020; padding: 1px 6px; margin-top: 1px; background: #fffdf5; }}
+        .school-header {{ text-align: center; margin-top: 2px; }}
+        .school-logo {{ height: 52px; width: auto; object-fit: contain; margin-bottom: 2px; }}
+        .school-header h1 {{ margin: 1px 0; font-size: 15.5pt; font-weight: 700; line-height: 1.2; }}
+        .school-header h3 {{ margin: 0 0 4px 0; font-size: 11pt; line-height: 1.2; }}
+        .main-badge {{ display: inline-block; background: #7a2020; color: #fff; font-size: 12pt; font-weight: 700; padding: 2px 22px; border-radius: 5px; }}
+        .session-txt {{ font-weight: 700; font-size: 10.5pt; margin-top: 3px; }}
+        .student-fields {{ margin-top: 4px; font-size: 9.5pt; font-weight: 600; }}
+        .field-row {{ border-bottom: 1px dotted #7a2020; padding: 3.5px 0 1.5px 0; display: flex; justify-content: space-between; }}
+        .val {{ color: #1a237e; font-weight: 700; padding-left: 5px; }}
+        
+        /* INSIDE PAGE */
+        .inside-page {{ flex-direction: column; padding: 5mm 7mm; }}
+        .inside-header {{ text-align: center; }}
+        .inside-header h2 {{ margin: 0; font-size: 15pt; line-height: 1.2; }}
+        .sub-h {{ font-weight: 700; font-size: 10pt; }}
+        .stu-strip {{ display: flex; justify-content: space-between; font-size: 9pt; margin-top: 3px; border-bottom: 1px solid #7a2020; padding-bottom: 2px; }}
+        .inside-body {{ display: flex; gap: 5mm; margin-top: 4px; flex: 1; }}
+        .acad-sec {{ width: 62%; display: flex; flex-direction: column; }}
+        .coschol-sec {{ width: 38%; display: flex; flex-direction: column; }}
+        .table-caption {{ text-align: center; font-weight: 700; font-size: 10.5pt; margin-bottom: 2px; }}
+        .marks-table, .co-table, .sign-table {{ width: 100%; border-collapse: collapse; text-align: center; font-size: 8pt; }}
+        .marks-table th, .marks-table td, .co-table th, .co-table td, .sign-table td {{ border: 1px solid #7a2020; padding: 3px 2px; }}
+        .marks-table th {{ background-color: #f3e5be; font-weight: 700; }}
+        .left {{ text-align: left; padding-left: 4px !important; }}
+        .bold {{ font-weight: 700; }}
+        .sign-table {{ margin-top: 5px; font-size: 8pt; }}
+        .sig-line {{ margin-top: 8px; font-weight: 600; }}
+        .reopen-note {{ text-align: center; font-size: 8.5pt; margin-top: auto; padding-top: 4px; font-weight: 600; }}
+        .co-badge {{ background: #7a2020; color: #fff; text-align: center; font-weight: 700; font-size: 9.5pt; padding: 2px 12px; border-radius: 4px; width: 155px; margin: 0 auto 3px auto; }}
+        .co-table td {{ padding: 2px 4px; font-size: 7.8pt; }}
+        .cat-row td {{ background-color: #f3e5be; font-weight: 700; }}
+        {preview_css}
+    </style>
+    </head>
+    <body>{pages_html}</body>
+    </html>
     """
-
-# Complete 2-Page A4 Landscape HTML + CSS
-html_template = f"""
-<!DOCTYPE html>
-<html lang="hi">
-<head>
-  <meta charset="UTF-8">
-  <style>
-    * {{
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }}
-
-    body {{
-      font-family: 'Mangal', 'Nirmala UI', 'Noto Sans Devanagari', Arial, sans-serif;
-      background-color: transparent;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      color: #2b1d14;
-      gap: 20px;
-    }}
-
-    .print-bar {{
-      width: 100%;
-      text-align: center;
-      padding: 8px;
-      background: #fff8eb;
-      border: 1px solid #d6c3a5;
-      border-radius: 8px;
-    }}
-
-    .btn-print {{
-      background-color: #7c2d12;
-      color: #ffffff;
-      border: none;
-      padding: 10px 28px;
-      font-size: 16px;
-      font-weight: bold;
-      border-radius: 6px;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-    }}
-
-    .btn-print:hover {{
-      background-color: #9a3412;
-    }}
-
-    .tip-text {{
-      font-size: 12.5px;
-      color: #5c3a21;
-      margin-top: 5px;
-    }}
-
-    /* A4 Landscape Sheet */
-    .page-sheet {{
-      width: 297mm;
-      height: 210mm;
-      background-color: #fdf6e2;
-      padding: 6mm;
-      border: 1px solid #bba88a;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      page-break-after: always;
-    }}
-
-    .page-sheet:last-child {{
-      page-break-after: auto;
-    }}
-
-    .outer-border {{
-      width: 100%;
-      height: 100%;
-      border: 2.5px solid #5c3a21;
-      padding: 3px;
-      display: flex;
-    }}
-
-    .inner-border {{
-      width: 100%;
-      height: 100%;
-      border: 1px solid #5c3a21;
-      display: flex;
-      flex-direction: column;
-    }}
-
-    /* PAGE 1: Two-Column Layout */
-    .two-col-grid {{
-      width: 100%;
-      height: 100%;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-    }}
-
-    .column {{
-      padding: 9mm 8.5mm;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }}
-
-    .left-col {{
-      border-right: 1.5px dashed #5c3a21;
-    }}
-
-    .section-title {{
-      font-size: 13.5px;
-      font-weight: bold;
-      color: #5c2818;
-      margin-bottom: 6px;
-    }}
-
-    table.grade-table {{
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 16px;
-      text-align: center;
-      font-size: 12px;
-    }}
-
-    table.grade-table th,
-    table.grade-table td {{
-      border: 1px solid #5c3a21;
-      padding: 6px 3px;
-    }}
-
-    table.grade-table th {{
-      font-weight: normal;
-      background-color: rgba(92, 58, 33, 0.06);
-    }}
-
-    table.grade-table td {{
-      font-weight: bold;
-    }}
-
-    .instructions-header {{
-      text-align: center;
-      margin-bottom: 10px;
-    }}
-
-    .badge-maroon {{
-      display: inline-block;
-      background-color: #8c3b2b;
-      color: #ffffff;
-      font-weight: bold;
-      font-size: 14px;
-      padding: 3px 18px;
-      border-radius: 3px;
-    }}
-
-    .instructions-list {{
-      list-style: none;
-      font-size: 12.8px;
-      line-height: 1.75;
-    }}
-
-    .instructions-list li {{
-      margin-bottom: 8px;
-      text-align: justify;
-    }}
-
-    .top-meta {{
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      font-size: 10.5px;
-      text-align: center;
-    }}
-
-    .meta-box {{
-      border: 1px solid #5c3a21;
-      padding: 2px 7px;
-      margin-top: 2px;
-      font-weight: bold;
-      background-color: #fffdf7;
-    }}
-
-    .school-header {{
-      text-align: center;
-      margin-top: 2px;
-    }}
-
-    .school-logo {{
-      width: 66px;
-      height: auto;
-      display: block;
-      margin: 0 auto 4px auto;
-    }}
-
-    .school-name {{
-      font-size: 20px;
-      font-weight: bold;
-      color: #5c2818;
-    }}
-
-    .school-address {{
-      font-size: 13.5px;
-      font-weight: bold;
-      color: #5c2818;
-    }}
-
-    .report-badge {{
-      display: inline-block;
-      background-color: #8c3b2b;
-      color: #ffffff;
-      font-size: 16px;
-      font-weight: bold;
-      padding: 3px 22px;
-      border-radius: 4px;
-      margin: 5px 0 3px 0;
-    }}
-
-    .session-text {{
-      font-size: 14.5px;
-      font-weight: bold;
-      color: #3b2314;
-    }}
-
-    .student-details {{
-      margin-top: 6px;
-      font-size: 13px;
-      line-height: 1.95;
-    }}
-
-    .field-row {{
-      display: flex;
-      align-items: baseline;
-      width: 100%;
-    }}
-
-    .field-label {{
-      white-space: nowrap;
-      font-weight: bold;
-      color: #4a2c18;
-    }}
-
-    .field-value {{
-      flex: 1;
-      border-bottom: 1.5px dotted #5c3a21;
-      padding-left: 8px;
-      font-weight: bold;
-      color: #1e3a8a;
-      min-height: 19px;
-    }}
-
-    .field-half {{
-      display: flex;
-      align-items: baseline;
-      width: 50%;
-    }}
-
-    /* PAGE 2: Inside Marks Sheet Styling */
-    .inside-page {{
-      padding: 7mm 9mm;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      height: 100%;
-    }}
-
-    .inside-header {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1.5px solid #5c3a21;
-      padding-bottom: 5px;
-    }}
-
-    .inside-title-box {{
-      text-align: center;
-    }}
-
-    .inside-school {{
-      font-size: 18px;
-      font-weight: bold;
-      color: #5c2818;
-    }}
-
-    .inside-sub {{
-      font-size: 13px;
-      font-weight: bold;
-      color: #8c3b2b;
-    }}
-
-    .mini-student-bar {{
-      display: flex;
-      justify-content: space-between;
-      background-color: rgba(92, 58, 33, 0.07);
-      border: 1px solid #5c3a21;
-      padding: 5px 10px;
-      font-size: 12.5px;
-      font-weight: bold;
-      margin: 6px 0;
-    }}
-
-    .blue-text {{
-      color: #1e3a8a;
-      font-weight: bold;
-    }}
-
-    table.marks-table {{
-      width: 100%;
-      border-collapse: collapse;
-      text-align: center;
-      font-size: 12.5px;
-    }}
-
-    table.marks-table th,
-    table.marks-table td {{
-      border: 1px solid #5c3a21;
-      padding: 5px 4px;
-    }}
-
-    table.marks-table th {{
-      background-color: rgba(140, 59, 43, 0.12);
-      color: #4a2c18;
-      font-weight: bold;
-    }}
-
-    table.marks-table td.sub-name {{
-      text-align: left;
-      padding-left: 8px;
-      font-weight: bold;
-    }}
-
-    .total-row {{
-      background-color: rgba(92, 58, 33, 0.08);
-      font-weight: bold;
-    }}
-
-    .bottom-grid {{
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 12px;
-      margin-top: 6px;
-    }}
-
-    table.small-info-table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-      text-align: center;
-    }}
-
-    table.small-info-table th,
-    table.small-info-table td {{
-      border: 1px solid #5c3a21;
-      padding: 4px 6px;
-    }}
-
-    table.small-info-table th {{
-      background-color: rgba(92, 58, 33, 0.08);
-    }}
-
-    .result-box {{
-      border: 1px solid #5c3a21;
-      padding: 6px 10px;
-      font-size: 12.5px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-around;
-      background-color: #fffdf7;
-    }}
-
-    .sign-row {{
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      margin-top: 24px;
-      padding: 0 15px;
-      font-size: 13px;
-      font-weight: bold;
-      color: #4a2c18;
-    }}
-
-    .sign-box {{
-      text-align: center;
-      border-top: 1px solid #5c3a21;
-      padding-top: 4px;
-      min-width: 160px;
-    }}
-
-    /* Exact Full A4 Landscape Print Rules */
-    @media print {{
-      @page {{
-        size: A4 landscape;
-        margin: 0;
-      }}
-
-      html, body {{
-        width: 297mm;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fdf6e2 !important;
-        gap: 0 !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-      }}
-
-      .print-bar {{
-        display: none !important;
-      }}
-
-      .page-sheet {{
-        width: 297mm !important;
-        height: 210mm !important;
-        border: none !important;
-        padding: 5mm !important;
-        margin: 0 !important;
-        page-break-inside: avoid;
-      }}
-    }}
-  </style>
-</head>
-<body>
-
-  <div class="print-bar">
-    <button class="btn-print" onclick="window.print()">🖨️ पूरी मार्कशीट प्रिंट करें (2 Pages - Full A4 Landscape)</button>
-    <div class="tip-text">💡 टिप: आप मार्कशीट के किसी भी नंबर या नाम पर क्लिक करके सीधे एडिट कर सकते हैं। प्रिंट करते समय <b>Two-sided (Flip on short edge)</b> चुनें।</div>
-  </div>
-
-  <!-- ================= PAGE 1: FRONT & BACK COVER ================= -->
-  <div class="page-sheet">
-    <div class="outer-border">
-      <div class="inner-border">
-        <div class="two-col-grid">
-
-          <!-- LEFT COLUMN -->
-          <div class="column left-col">
-            <div>
-              <div class="section-title">शैक्षिक मूल्यांकन ग्रेडिंग सिस्टम (प्रतिशत में)</div>
-              <table class="grade-table">
-                <tr>
-                  <th>91-100</th><th>81-90</th><th>71-80</th><th>61-70</th>
-                  <th>51-60</th><th>41-50</th><th>33-40</th><th>0-32</th>
-                </tr>
-                <tr>
-                  <td>A1</td><td>A2</td><td>B1</td><td>B2</td>
-                  <td>C1</td><td>C2</td><td>D</td><td>E</td>
-                </tr>
-              </table>
-
-              <div class="section-title">जीवन कौशल व्यवहार एवं जीवन मूल्य तथा अभिरुचि मूल्यांकन<br>(ग्रेडिंग सिस्टम)</div>
-              <table class="grade-table">
-                <tr>
-                  <th>A</th><th>B</th><th>C</th><th>D</th><th>E</th>
-                </tr>
-                <tr>
-                  <td>उत्कृष्ट</td><td>अति<br>उत्तम</td><td>उत्तम</td><td>संतोषजनक</td><td>सुधार<br>अपेक्षित</td>
-                </tr>
-              </table>
-            </div>
-
-            <div>
-              <div class="instructions-header">
-                <span class="badge-maroon">-: सामान्य निर्देश :-</span>
-              </div>
-              <ul class="instructions-list">
-                <li>1. संरक्षक अपने पाल्य/पाल्या के अर्द्धवार्षिक प्राप्तांक देखकर, इस प्रगति पत्र पर हस्ताक्षर करके तीन दिन के अंदर विद्यालय में कक्षा अध्यापक के पास जमा कर दें।</li>
-                <li>2. इस प्रगति पत्र के खो जाने पर दूसरी प्रतिलिपि के लिए ...................... रुपये का शुल्क देना पड़ेगा।</li>
-                <li>3. प्रगति पत्र पर अंकित प्राप्तांक के साथ किसी भी तरह की छेड़छाड़ न की जाए।</li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- RIGHT COLUMN -->
-          <div class="column right-col">
-            <div class="top-meta">
-              <div>
-                <div>विद्यालय की वेबसाइट</div>
-                <div class="meta-box">www.adityabirlaschools.co.in/abic-renukoot</div>
-              </div>
-              <div>
-                <div>विद्यालय का कोड</div>
-                <div class="meta-box">1023</div>
-              </div>
-            </div>
-
-            <div class="school-header">
-              {logo_html}
-              <div class="school-name">आदित्य बिड़ला इण्टरमीडिएट कॉलेज</div>
-              <div class="school-address">रेणुकूट, सोनभद्र (उ०प्र०)</div>
-              <div class="report-badge">प्रगति-पत्र</div>
-              <div class="session-text">शैक्षणिक सत्र {session_year}</div>
-            </div>
-
-            <div class="student-details">
-              <div class="field-row">
-                <span class="field-label">छात्र / छात्रा का नाम :</span>
-                <span class="field-value" contenteditable="true">{student_data['name']}</span>
-              </div>
-
-              <div class="field-row">
-                <div class="field-half">
-                  <span class="field-label">अनुक्रमांक :</span>
-                  <span class="field-value" contenteditable="true">{student_data['roll']}</span>
-                </div>
-                <div class="field-half" style="padding-left: 10px;">
-                  <span class="field-label">निलय :</span>
-                  <span class="field-value" contenteditable="true">{student_data['house']}</span>
-                </div>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">पिता का नाम :</span>
-                <span class="field-value" contenteditable="true">{student_data['father']}</span>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">माता का नाम :</span>
-                <span class="field-value" contenteditable="true">{student_data['mother']}</span>
-              </div>
-
-              <div class="field-row">
-                <div class="field-half">
-                  <span class="field-label">जन्मतिथि :</span>
-                  <span class="field-value" contenteditable="true">{student_data['dob']}</span>
-                </div>
-                <div class="field-half" style="padding-left: 10px;">
-                  <span class="field-label">कक्षा एवं वर्ग :</span>
-                  <span class="field-value" contenteditable="true">{student_data['class_sec']}</span>
-                </div>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">मोबाइल नंबर :</span>
-                <span class="field-value" contenteditable="true">{student_data['mobile']}</span>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">छात्र पंजीकरण संख्या :</span>
-                <span class="field-value" contenteditable="true">{student_data['reg_no']}</span>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">आधार संख्या :</span>
-                <span class="field-value" contenteditable="true">{student_data['aadhaar']}</span>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">पेन संख्या (PEN No.) :</span>
-                <span class="field-value" contenteditable="true">{student_data['pen']}</span>
-              </div>
-
-              <div class="field-row">
-                <span class="field-label">पता :</span>
-                <span class="field-value" contenteditable="true">{student_data['address']}</span>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ================= PAGE 2: INSIDE MARKS SHEET ================= -->
-  <div class="page-sheet">
-    <div class="outer-border">
-      <div class="inner-border">
-        <div class="inside-page">
-
-          <!-- Header -->
-          <div class="inside-header">
-            <div style="font-size: 12px; font-weight: bold;">विद्यालय कोड : 1023</div>
-            <div class="inside-title-box">
-              <div class="inside-school">आदित्य बिड़ला इण्टरमीडिएट कॉलेज, रेणुकूट, सोनभद्र (उ०प्र०)</div>
-              <div class="inside-sub">शैक्षिक मूल्यांकन विवरण-पत्र (सत्र {session_year})</div>
-            </div>
-            <div style="font-size: 12px; font-weight: bold;">पंजीकरण सं० : <span class="blue-text">{student_data['reg_no']}</span></div>
-          </div>
-
-          <!-- Student Info Summary Bar -->
-          <div class="mini-student-bar">
-            <span>छात्र/छात्रा : <span class="blue-text">{student_data['name']}</span></span>
-            <span>कक्षा एवं वर्ग : <span class="blue-text">{student_data['class_sec']}</span></span>
-            <span>अनुक्रमांक : <span class="blue-text">{student_data['roll']}</span></span>
-            <span>निलय : <span class="blue-text">{student_data['house']}</span></span>
-          </div>
-
-          <!-- Subject-wise Marks Table -->
-          <table class="marks-table">
-            <thead>
-              <tr>
-                <th rowspan="2" style="width: 40px;">क्र०सं०</th>
-                <th rowspan="2" style="width: 240px;">विषय (Subjects)</th>
-                <th colspan="2">त्रैमासिक / मासिक परीक्षा</th>
-                <th colspan="2">अर्द्धवार्षिक परीक्षा</th>
-                <th colspan="2">वार्षिक परीक्षा</th>
-                <th colspan="2">महायोग (Grand Total)</th>
-                <th rowspan="2" style="width: 65px;">ग्रेड</th>
-              </tr>
-              <tr>
-                <th>पूर्णांक</th>
-                <th>प्राप्तांक</th>
-                <th>पूर्णांक</th>
-                <th>प्राप्तांक</th>
-                <th>पूर्णांक</th>
-                <th>प्राप्तांक</th>
-                <th>पूर्णांक</th>
-                <th>प्राप्तांक</th>
-              </tr>
-            </thead>
-            <tbody>
-              {marks_table_rows_html}
-              <tr class="total-row">
-                <td colspan="2">महायोग (Grand Total)</td>
-                <td contenteditable="true">100</td>
-                <td class="blue-text" contenteditable="true"></td>
-                <td contenteditable="true">500</td>
-                <td class="blue-text" contenteditable="true"></td>
-                <td contenteditable="true">500</td>
-                <td class="blue-text" contenteditable="true"></td>
-                <td contenteditable="true">1100</td>
-                <td class="blue-text" contenteditable="true"></td>
-                <td class="blue-text" contenteditable="true"></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Attendance, Co-scholastic & Result Summary -->
-          <div class="bottom-grid">
-            <table class="small-info-table">
-              <thead>
-                <tr>
-                  <th>मूल्यांकन क्षेत्र</th>
-                  <th>अर्द्धवार्षिक</th>
-                  <th>वार्षिक</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style="text-align:left; font-weight:bold;">जीवन कौशल व्यवहार एवं मूल्य (ग्रेड)</td>
-                  <td class="blue-text" contenteditable="true">A</td>
-                  <td class="blue-text" contenteditable="true">A</td>
-                </tr>
-                <tr>
-                  <td style="text-align:left; font-weight:bold;">अभिरुचि मूल्यांकन (ग्रेड)</td>
-                  <td class="blue-text" contenteditable="true">A</td>
-                  <td class="blue-text" contenteditable="true">A</td>
-                </tr>
-                <tr>
-                  <td style="text-align:left; font-weight:bold;">उपस्थिति (कुल कार्यदिवस / उपस्थित)</td>
-                  <td class="blue-text" contenteditable="true">98 / 110</td>
-                  <td class="blue-text" contenteditable="true">195 / 215</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="result-box">
-              <div><b>कुल प्राप्तांक प्रतिशत (%) :</b> <span class="blue-text" contenteditable="true">________ %</span> &nbsp;&nbsp; <b>कक्षा में स्थान :</b> <span class="blue-text" contenteditable="true">______</span></div>
-              <div><b>परीक्षाफल (Result) :</b> <span class="blue-text" contenteditable="true">उत्तीर्ण (Passed) / प्रोन्नत (Promoted)</span></div>
-              <div><b>विशेष टिप्पणी (Remarks) :</b> <span class="blue-text" contenteditable="true">उत्तम प्रदर्शन (Good Performance)</span></div>
-            </div>
-          </div>
-
-          <!-- Signatures Footer -->
-          <div class="sign-row">
-            <div class="sign-box">कक्षा अध्यापक के हस्ताक्षर</div>
-            <div class="sign-box">अभिभावक के हस्ताक्षर</div>
-            <div class="sign-box">प्रधानाचार्य के हस्ताक्षर एवं मुहर</div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  </div>
-
-</body>
-</html>
-"""
-
-# Render full 2-page marksheet inside Streamlit
-components.html(html_template, height=1680, scrolling=True)
+    return html_doc
+
+# ================= STREAMLIT UI =================
+st.title("🎓 ABIC Renukoot - Marksheet Generator")
+
+col_top1, col_top2 = st.columns([2, 1])
+with col_top1:
+    selected_stream = st.selectbox(
+        "📌 Step 1: Stream Chunein (Subject Formula Set Karne Ke Liye)",
+        list(STREAM_CONFIG.keys())
+    )
+with col_top2:
+    uploaded_logo_file = st.file_uploader("🏫 School Logo (Optional - Agar GitHub par logo.png nahi hai)", type=["png", "jpg", "jpeg"])
+
+logo_b64_str = get_logo_base64(uploaded_logo_file)
+
+active_subs = STREAM_CONFIG[selected_stream]
+cols_info = st.columns(len(active_subs))
+for idx, (code, sname, has_pr, m_th, m_pr) in enumerate(active_subs):
+    cols_info[idx].info(f"**{sname}**\n\n{'Theory: '+str(m_th)+' + Prac: '+str(m_pr) if has_pr else 'Max Marks: '+str(m_th)}")
+
+st.markdown("### 📂 Step 2: Excel File Upload Karein")
+col_t1, col_t2 = st.columns([1, 2])
+with col_t1:
+    st.download_button(
+        label=f"📥 Download Sample Excel ({selected_stream})",
+        data=get_stream_excel_template(selected_stream),
+        file_name=f"ABIC_{selected_stream.replace(' ', '_')}_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+with col_t2:
+    uploaded_file = st.file_uploader("Marks Bhari Hui Excel (.xlsx) Upload Karein", type=["xlsx"])
+
+if uploaded_file:
+    df_uploaded = pd.read_excel(uploaded_file).fillna("")
+    df_uploaded["Roll_No_Str"] = df_uploaded["Roll_No"].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+    df_uploaded["Reg_No_Str"] = df_uploaded["Reg_No"].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+    df_uploaded["Class_Sec_Str"] = df_uploaded["Class_Sec"].astype(str).str.strip()
+
+    tab1, tab2 = st.tabs(["📚 Bulk Preview & All Download", "🔍 Single Student (By Class & Roll No / SR No)"])
+
+    with tab1:
+        st.success(f"✅ Total **{len(df_uploaded)} students** ka data load ho gaya hai.")
+        
+        col_b1, col_b2 = st.columns([1, 1])
+        with col_b1:
+            if st.button("🚀 Generate All Marksheets PDF (Bulk)", type="primary"):
+                with st.spinner(f"Sabhi {len(df_uploaded)} students ki A4 Print-Ready PDF taiyar ho rahi hai..."):
+                    full_html = build_marksheet_html(df_uploaded, selected_stream, logo_b64=logo_b64_str, is_preview=False)
+                    st.session_state["bulk_pdf"] = HTML(string=full_html).write_pdf()
+                    st.session_state["bulk_count"] = len(df_uploaded)
+
+        with col_b2:
+            if "bulk_pdf" in st.session_state:
+                st.download_button(
+                    label=f"📥 Download All {st.session_state['bulk_count']} Marksheets (A4 Print PDF)",
+                    data=st.session_state["bulk_pdf"],
+                    file_name=f"ABIC_{selected_stream.replace(' ', '_')}_All_Marksheets_A4.pdf",
+                    mime="application/pdf"
+                )
+
+        st.markdown("---")
+        st.subheader(f"👁️ Sample A4 Marksheet Preview (First Student: {df_uploaded.iloc[0]['Name']})")
+        preview_html = build_marksheet_html(df_uploaded.iloc[[0]], selected_stream, logo_b64=logo_b64_str, is_preview=True)
+        components.html(preview_html, height=1680, scrolling=True)
+
+    with tab2:
+        st.subheader("🔍 Class aur Roll No / SR No (Reg No) se Student Khojein")
+        available_classes = sorted(df_uploaded["Class_Sec_Str"].unique().tolist())
+        
+        sc1, sc2, sc3 = st.columns(3)
+        selected_class = sc1.selectbox("1. Class & Section Chunein", available_classes)
+        search_type = sc2.radio("2. Kis se khojna hai?", ["Roll Number", "SR Number (Reg No)"], horizontal=True)
+        search_val = sc3.text_input("3. Roll No ya SR No likhein", placeholder="Jaise: 44 ya 38940").strip()
+
+        class_df = df_uploaded[df_uploaded["Class_Sec_Str"] == selected_class]
+
+        if search_val:
+            if search_type == "Roll Number":
+                matched_df = class_df[class_df["Roll_No_Str"] == search_val]
+            else:
+                matched_df = class_df[class_df["Reg_No_Str"] == search_val]
+
+            if not matched_df.empty:
+                stu = matched_df.iloc[0]
+                st.success(f"🎯 Student Mila: **{stu['Name']}** | Class: **{stu['Class_Sec_Str']}** | Roll No: **{stu['Roll_No_Str']}** | SR No: **{stu['Reg_No_Str']}**")
+                
+                single_full_html = build_marksheet_html(matched_df.iloc[[0]], selected_stream, logo_b64=logo_b64_str, is_preview=False)
+                single_preview_html = build_marksheet_html(matched_df.iloc[[0]], selected_stream, logo_b64=logo_b64_str, is_preview=True)
+                
+                with st.spinner("Single Marksheet PDF taiyar ho rahi hai..."):
+                    single_pdf_bytes = HTML(string=single_full_html).write_pdf()
+                
+                st.download_button(
+                    label=f"📄 Download {stu['Name']} Marksheet PDF (A4)",
+                    data=single_pdf_bytes,
+                    file_name=f"{stu['Roll_No_Str']}_{stu['Name']}_Marksheet.pdf",
+                    mime="application/pdf"
+                )
+                
+                st.markdown("---")
+                st.subheader(f"👁️ Marksheet Preview: {stu['Name']}")
+                components.html(single_preview_html, height=1680, scrolling=True)
+            else:
+                st.error(f"❌ Class **{selected_class}** mein {search_type} **`{search_val}`** ka koi student nahi mila.")
+        else:
+            st.info(f"ℹ️ Class **{selected_class}** mein kul **{len(class_df)} students** hain. Upar box mein **Roll No** ya **SR No** daalte hi marksheet dikh jayegi.")
