@@ -363,16 +363,16 @@ def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
             </div>
         </div>
 
-        <!-- PAGE 2: INSIDE MARKSHEET (EXACT A4 LANDSCAPE) -->
+        <!-- PAGE 2: INSIDE MARKSHEET (ENLARGED FULL-PAGE A4 LANDSCAPE) -->
         <div class="sheet inside-page">
             <div class="inside-header">
                 <h2>आदित्य बिड़ला इण्टरमीडिएट कॉलेज, रेणुकूट, सोनभद्र</h2>
                 <div class="sub-h">प्रगति पत्र विवरण सत्र {row.get('Session', '2025 - 2026')}</div>
                 <div class="stu-strip">
-                    <span>छात्र/छात्रा का नाम: <b>{row.get('Name', '')}</b></span>
-                    <span>छात्र पंजिका संख्या: <b>{row.get('Reg_No', '')}</b></span>
-                    <span>अनुक्रमांक: <b>{row.get('Roll_No', '')}</b></span>
-                    <span>कक्षा एवं वर्ग: <b>{row.get('Class_Sec', '')}</b></span>
+                    <span>छात्र/छात्रा का नाम : <b>{row.get('Name', '')}</b></span>
+                    <span>छात्र पंजिका संख्या : <b>{row.get('Reg_No', '')}</b></span>
+                    <span>अनुक्रमांक : <b>{row.get('Roll_No', '')}</b></span>
+                    <span>कक्षा एवं वर्ग : <b>{row.get('Class_Sec', '')}</b></span>
                 </div>
             </div>
 
@@ -382,13 +382,13 @@ def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
                     <table class="marks-table">
                         <thead>
                             <tr>
-                                <th rowspan="2">क्र.</th>
-                                <th rowspan="2" style="width:102px;">विषय</th>
+                                <th rowspan="2" style="width:24px;">क्र.</th>
+                                <th rowspan="2" style="width:125px;">विषय</th>
                                 <th colspan="4">मासिक परीक्षा</th>
                                 <th colspan="3">अर्द्धवार्षिक परीक्षा</th>
                                 <th colspan="3">वार्षिक परीक्षा</th>
                                 <th colspan="3">सम्पूर्ण परीक्षा</th>
-                                <th rowspan="2">ग्रेड</th>
+                                <th rowspan="2" style="width:34px;">ग्रेड</th>
                             </tr>
                             <tr>
                                 <th>प्र.</th><th>द्वि.</th><th>तृ.</th><th>योग</th>
@@ -426,7 +426,7 @@ def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
                                 <div class="sig-line">ह० अभिभावक</div>
                             </td>
                             <td style="vertical-align:top;">
-                                <div style="margin-top:8px; font-size:7.8pt; line-height:1.5;">{remark_line}</div>
+                                <div style="margin-top:14px; font-size:9pt; line-height:1.7;">{remark_line}</div>
                             </td>
                             <td style="text-align:left; vertical-align:top;">
                                 <div>उपस्थिति : <b>{att_an}</b></div>
@@ -445,7 +445,7 @@ def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
                     <div class="co-badge">सह शैक्षणिक मूल्यांकन</div>
                     <table class="co-table">
                         <thead>
-                            <tr><th style="width:26px;">क्रम</th><th>मूल्यांकन का क्षेत्र</th><th style="width:36px;">ग्रेड</th></tr>
+                            <tr><th style="width:30px;">क्रम</th><th>मूल्यांकन का क्षेत्र</th><th style="width:42px;">ग्रेड</th></tr>
                         </thead>
                         <tbody>
                             <tr class="cat-row"><td colspan="3">जीवन कौशल</td></tr>
@@ -466,7 +466,7 @@ def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
                             <tr><td>13</td><td class="left">पाठ्य सहगामी गतिविधियाँ</td><td class="bold">{row.get('CS_13','A')}</td></tr>
                             <tr><td>14</td><td class="left">कला / संगीत / साहित्यिक गतिविधियाँ</td><td class="bold">{row.get('CS_14','A')}</td></tr>
                             <tr><td>15</td><td class="left">वैज्ञानिक अभिरुचि</td><td class="bold">{row.get('CS_15','A')}</td></tr>
-                            <tr><td colspan="3" class="left bold" style="padding:3px 5px;">अंतिम कक्षा : <span class="val">{final_cls}</span></td></tr>
+                            <tr><td colspan="3" class="left bold" style="padding:5px 6px; font-size:9.5pt;">अंतिम कक्षा : <span class="val">{final_cls}</span></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -548,27 +548,30 @@ def build_marksheet_html(df, stream_name, logo_b64="", is_preview=False):
         .field-row {{ border-bottom: 1px dotted #7a2020; padding: 3.5px 0 1.5px 0; display: flex; justify-content: space-between; }}
         .val {{ color: #1a237e; font-weight: 700; padding-left: 5px; }}
         
-        /* INSIDE PAGE */
-        .inside-page {{ flex-direction: column; padding: 5mm 7mm; }}
+        /* PAGE 2: ENLARGED FULL-PAGE A4 FIT */
+        .inside-page {{ flex-direction: column; padding: 5.5mm 7mm; justify-content: space-between; }}
         .inside-header {{ text-align: center; }}
-        .inside-header h2 {{ margin: 0; font-size: 15pt; line-height: 1.2; }}
-        .sub-h {{ font-weight: 700; font-size: 10pt; }}
-        .stu-strip {{ display: flex; justify-content: space-between; font-size: 9pt; margin-top: 3px; border-bottom: 1px solid #7a2020; padding-bottom: 2px; }}
-        .inside-body {{ display: flex; gap: 5mm; margin-top: 4px; flex: 1; }}
-        .acad-sec {{ width: 62%; display: flex; flex-direction: column; }}
-        .coschol-sec {{ width: 38%; display: flex; flex-direction: column; }}
-        .table-caption {{ text-align: center; font-weight: 700; font-size: 10.5pt; margin-bottom: 2px; }}
-        .marks-table, .co-table, .sign-table {{ width: 100%; border-collapse: collapse; text-align: center; font-size: 8pt; }}
-        .marks-table th, .marks-table td, .co-table th, .co-table td, .sign-table td {{ border: 1px solid #7a2020; padding: 3px 2px; }}
-        .marks-table th {{ background-color: #f3e5be; font-weight: 700; }}
-        .left {{ text-align: left; padding-left: 4px !important; }}
+        .inside-header h2 {{ margin: 0; font-size: 17.5pt; line-height: 1.2; }}
+        .sub-h {{ font-weight: 700; font-size: 11.5pt; margin-top: 1px; }}
+        .stu-strip {{ display: flex; justify-content: space-between; font-size: 10.5pt; margin-top: 4px; border-bottom: 1.5px solid #7a2020; padding-bottom: 3px; }}
+        .inside-body {{ display: flex; gap: 5mm; margin-top: 5px; flex: 1; height: 100%; }}
+        .acad-sec {{ width: 61%; display: flex; flex-direction: column; justify-content: space-between; height: 100%; }}
+        .coschol-sec {{ width: 39%; display: flex; flex-direction: column; justify-content: space-between; height: 100%; }}
+        .table-caption {{ text-align: center; font-weight: 700; font-size: 12pt; margin-bottom: 3px; }}
+        .marks-table {{ width: 100%; border-collapse: collapse; text-align: center; font-size: 9.2pt; }}
+        .marks-table th, .marks-table td {{ border: 1px solid #7a2020; padding: 5.5px 2px; }}
+        .marks-table th {{ background-color: #f3e5be; font-weight: 700; font-size: 8.8pt; }}
+        .left {{ text-align: left; padding-left: 5px !important; }}
         .bold {{ font-weight: 700; }}
-        .sign-table {{ margin-top: 5px; font-size: 8pt; }}
-        .sig-line {{ margin-top: 8px; font-weight: 600; }}
-        .reopen-note {{ text-align: center; font-size: 8.5pt; margin-top: auto; padding-top: 4px; font-weight: 600; }}
-        .co-badge {{ background: #7a2020; color: #fff; text-align: center; font-weight: 700; font-size: 9.5pt; padding: 2px 12px; border-radius: 4px; width: 155px; margin: 0 auto 3px auto; }}
-        .co-table td {{ padding: 2px 4px; font-size: 7.8pt; }}
-        .cat-row td {{ background-color: #f3e5be; font-weight: 700; }}
+        .sign-table {{ width: 100%; border-collapse: collapse; text-align: center; margin-top: 6px; font-size: 9.2pt; flex: 1; }}
+        .sign-table td {{ border: 1px solid #7a2020; padding: 4px 5px; }}
+        .sig-line {{ margin-top: 13px; font-weight: 600; }}
+        .reopen-note {{ text-align: center; font-size: 9.5pt; margin-top: 4px; font-weight: 600; }}
+        .co-badge {{ background: #7a2020; color: #fff; text-align: center; font-weight: 700; font-size: 11pt; padding: 3px 14px; border-radius: 4px; width: 175px; margin: 0 auto 4px auto; }}
+        .co-table {{ width: 100%; border-collapse: collapse; text-align: center; font-size: 8.8pt; flex: 1; }}
+        .co-table th, .co-table td {{ border: 1px solid #7a2020; padding: 3.4px 5px; }}
+        .co-table th {{ background-color: #f3e5be; font-weight: 700; font-size: 9pt; }}
+        .cat-row td {{ background-color: #f3e5be; font-weight: 700; font-size: 9pt; }}
         {preview_css}
     </style>
     </head>
