@@ -70,7 +70,7 @@ def parse_cell(val):
     except:
         return 0, s, True
 
-# ================= FORMULA-BASED EXCEL TEMPLATE GENERATOR =================
+# ================= EXCEL TEMPLATE GENERATOR =================
 def get_stream_excel_template(stream_name):
     subjects = STREAM_CONFIG[stream_name]
     sample = {
@@ -86,13 +86,16 @@ def get_stream_excel_template(stream_name):
         sample[f"{code}_M3"] = ""
         sample[f"{code}_HY_Th"] = 56 if has_pr else 78
         sample[f"{code}_HY_Pr"] = 28 if has_pr else ""
+        # Annual columns blank by default (fill when Final Exam happens)
         sample[f"{code}_AN_Th"] = ""
         sample[f"{code}_AN_Pr"] = ""
 
-    sample["Moral_Sports_Grade"] = "A"
+    sample["Moral_Sports_HY"] = "A"
+    sample["Moral_Sports_AN"] = ""
     for i in range(1, 16):
         sample[f"CS_{i}"] = "A"
-    sample["Attendance"] = "110/120"
+    sample["Attendance_HY"] = "110/120"
+    sample["Attendance_AN"] = ""
     sample["Session"] = "2025 - 2026"
 
     df = pd.DataFrame([sample])
@@ -118,9 +121,10 @@ def build_marksheet_html(df, stream_name, is_preview=False):
         
         has_any_monthly = False
         has_any_annual = False
-        failed_subjects = 0
+        hy_failed_subs = 0
+        final_failed_subs = 0
 
-        # Pre-check if Monthly or Annual has any entered data (even 0 or AB)
+        # Auto-detect whether Annual Exam marks are entered in Excel for this student
         for code, _, _, _, _ in subjects:
             for col_suffix in ["M1", "M2", "M3"]:
                 _, _, ent = parse_cell(row.get(f"{code}_{col_suffix}"))
@@ -132,7 +136,7 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                     has_any_annual = True
 
         for idx, (code, sub_name, has_pr, max_th, max_pr) in enumerate(subjects, start=1):
-            # 1. Monthly Test Values (Only for display & monthly total - NOT added to Sampoorn)
+            # 1. Monthly Test (Not added in Sampoorn)
             m1_num, m1_disp, m1_ent = parse_cell(row.get(f"{code}_M1"))
             m2_num, m2_disp, m2_ent = parse_cell(row.get(f"{code}_M2"))
             m3_num, m3_disp, m3_ent = parse_cell(row.get(f"{code}_M3"))
@@ -140,14 +144,11 @@ def build_marksheet_html(df, stream_name, is_preview=False):
             m_any_ent = m1_ent or m2_ent or m3_ent
             m_tot_num = m1_num + m2_num + m3_num
             if m_any_ent:
-                if m1_disp == "AB" and m2_disp == "AB" and m3_disp == "AB":
-                    m_tot_disp = "AB"
-                else:
-                    m_tot_disp = str(m_tot_num)
+                m_tot_disp = "AB" if (m1_disp == "AB" and m2_disp == "AB" and m3_disp == "AB") else str(m_tot_num)
             else:
                 m_tot_disp = ""
 
-            # 2. Half-Yearly Values
+            # 2. Half-Yearly Exam
             hy_th_num, hy_th_disp, hy_th_ent = parse_cell(row.get(f"{code}_HY_Th"))
             if has_pr:
                 hy_pr_num, hy_pr_disp, hy_pr_ent = parse_cell(row.get(f"{code}_HY_Pr"))
@@ -157,14 +158,14 @@ def build_marksheet_html(df, stream_name, is_preview=False):
             hy_any_ent = hy_th_ent or hy_pr_ent
             hy_tot_num = hy_th_num + hy_pr_num
             if hy_any_ent:
-                if hy_th_disp == "AB" and (not has_pr or hy_pr_disp == "AB"):
-                    hy_tot_disp = "AB"
-                else:
-                    hy_tot_disp = str(hy_tot_num)
+                hy_tot_disp = "AB" if (hy_th_disp == "AB" and (not has_pr or hy_pr_disp == "AB")) else str(hy_tot_num)
             else:
                 hy_tot_disp = ""
 
-            # 3. Annual Values
+            if hy_any_ent and get_grade(hy_tot_num, 100) == "E":
+                hy_failed_subs += 1
+
+            # 3. Annual Exam (Only populates if Annual marks are entered in Excel)
             an_th_num, an_th_disp, an_th_ent = parse_cell(row.get(f"{code}_AN_Th"))
             if has_pr:
                 an_pr_num, an_pr_disp, an_pr_ent = parse_cell(row.get(f"{code}_AN_Pr"))
@@ -173,15 +174,12 @@ def build_marksheet_html(df, stream_name, is_preview=False):
             
             an_any_ent = an_th_ent or an_pr_ent
             an_tot_num = an_th_num + an_pr_num
-            if an_any_ent:
-                if an_th_disp == "AB" and (not has_pr or an_pr_disp == "AB"):
-                    an_tot_disp = "AB"
-                else:
-                    an_tot_disp = str(an_tot_num)
+            if has_any_annual and an_any_ent:
+                an_tot_disp = "AB" if (an_th_disp == "AB" and (not has_pr or an_pr_disp == "AB")) else str(an_tot_num)
             else:
                 an_tot_disp = ""
 
-            # 4. Sampoorn Pariksha (ONLY Half-Yearly + Annual; Monthly Test NOT included)
+            # 4. Sampoorn Pariksha (Auto-calculated ONLY when Annual marks are entered)
             sub_grand_th_num = hy_th_num + an_th_num
             sub_grand_pr_num = hy_pr_num + an_pr_num
             sub_grand_tot_num = hy_tot_num + an_tot_num
@@ -194,14 +192,11 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                     grand_th_disp = ""
                     grand_pr_disp = ""
                 
-                if hy_tot_disp == "AB" and an_tot_disp == "AB":
-                    grand_tot_disp = "AB"
-                else:
-                    grand_tot_disp = str(sub_grand_tot_num)
-                
+                grand_tot_disp = "AB" if (hy_tot_disp == "AB" and an_tot_disp == "AB") else str(sub_grand_tot_num)
                 eval_marks = sub_grand_tot_num
                 max_possible = 200
             else:
+                # Keep Sampoorn columns completely blank during Half-Yearly
                 grand_th_disp = ""
                 grand_pr_disp = ""
                 grand_tot_disp = ""
@@ -209,8 +204,8 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                 max_possible = 100
 
             grade = get_grade(eval_marks, max_possible) if (hy_any_ent or an_any_ent) else ""
-            if grade == "E":
-                failed_subjects += 1
+            if has_any_annual and grade == "E":
+                final_failed_subs += 1
 
             total_m_all += m_tot_num
             total_hy_all += hy_tot_num
@@ -225,8 +220,8 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                 <td>{hy_th_disp if has_pr else ''}</td>
                 <td>{hy_pr_disp if has_pr else ''}</td>
                 <td class="bold">{hy_tot_disp}</td>
-                <td>{an_th_disp if has_pr else ''}</td>
-                <td>{an_pr_disp if has_pr else ''}</td>
+                <td>{an_th_disp if (has_any_annual and has_pr) else ''}</td>
+                <td>{an_pr_disp if (has_any_annual and has_pr) else ''}</td>
                 <td class="bold">{an_tot_disp}</td>
                 <td>{grand_th_disp}</td>
                 <td>{grand_pr_disp}</td>
@@ -235,39 +230,60 @@ def build_marksheet_html(df, stream_name, is_preview=False):
             </tr>
             """
 
-        moral_grade = str(row.get('Moral_Sports_Grade', 'A')).strip() or 'A'
+        # Support both old ('Moral_Sports_Grade') and new ('Moral_Sports_HY') column names
+        moral_hy = str(row.get('Moral_Sports_HY', row.get('Moral_Sports_Grade', 'A'))).strip() or 'A'
+        moral_an = str(row.get('Moral_Sports_AN', '')).strip()
+        if has_any_annual and not moral_an:
+            moral_an = moral_hy
+        final_moral_grade = moral_an if has_any_annual else moral_hy
+
         rows_html += f"""
         <tr>
             <td>6</td>
             <td class="left">नैतिक, खेल एवं शारीरिक शिक्षा</td>
             <td></td><td></td><td></td><td></td>
-            <td></td><td></td><td class="bold">{moral_grade}</td>
-            <td></td><td></td><td class="bold">{moral_grade if has_any_annual else ''}</td>
+            <td></td><td></td><td class="bold">{moral_hy}</td>
+            <td></td><td></td><td class="bold">{moral_an if has_any_annual else ''}</td>
             <td></td><td></td><td></td>
-            <td class="bold">{moral_grade}</td>
+            <td class="bold">{final_moral_grade}</td>
         </tr>
         """
 
         num_subs = len(subjects)
+        
+        # --- PART 1: HALF-YEARLY RESULT CALCULATION (Always active) ---
+        hy_max = num_subs * 100
+        hy_pct = round((total_hy_all / hy_max) * 100, 2) if hy_max > 0 else 0
+        hy_overall_grade = get_grade(total_hy_all, hy_max)
+        if hy_failed_subs == 0:
+            hy_result_txt = f"उत्तीर्ण ({hy_pct}%)"
+        elif hy_failed_subs == 1:
+            hy_result_txt = f"पूरक ({hy_pct}%)"
+        else:
+            hy_result_txt = f"अनुत्तीर्ण ({hy_pct}%)"
+
+        # --- PART 2: ANNUAL / SAMPOORNA RESULT CALCULATION (Active ONLY when Annual marks are entered) ---
         if has_any_annual:
             grand_max = num_subs * 200
-            final_obtained = total_grand_all
-        else:
-            grand_max = num_subs * 100
-            final_obtained = total_hy_all
-
-        overall_pct = round((final_obtained / grand_max) * 100, 2) if grand_max > 0 else 0
-        overall_grade = get_grade(final_obtained, grand_max)
-        
-        if str(row.get('Result', '')).strip() != "":
-            result_status = str(row.get('Result'))
-        else:
-            if failed_subjects == 0:
-                result_status = f"उत्तीर्ण ({overall_pct}%)"
-            elif failed_subjects == 1:
-                result_status = f"पूरक / सप्लीमेंट्री ({overall_pct}%)"
+            final_pct = round((total_grand_all / grand_max) * 100, 2) if grand_max > 0 else 0
+            overall_grade = get_grade(total_grand_all, grand_max)
+            if str(row.get('Result', '')).strip() != "":
+                an_result_txt = str(row.get('Result'))
             else:
-                result_status = f"अनुत्तीर्ण ({overall_pct}%)"
+                if final_failed_subs == 0:
+                    an_result_txt = f"उत्तीर्ण ({final_pct}%)"
+                elif final_failed_subs == 1:
+                    an_result_txt = f"पूरक / सप्लीमेंट्री ({final_pct}%)"
+                else:
+                    an_result_txt = f"अनुत्तीर्ण ({final_pct}%)"
+            remark_line = f"वार्षिक प्रतिशत: <b>{final_pct}%</b> | समग्र ग्रेड: <b>{overall_grade}</b>"
+        else:
+            overall_grade = hy_overall_grade
+            an_result_txt = ""
+            remark_line = f"अर्द्धवार्षिक प्रतिशत: <b>{hy_pct}%</b> | ग्रेड: <b>{hy_overall_grade}</b>"
+
+        att_hy = str(row.get('Attendance_HY', row.get('Attendance', ''))).strip()
+        att_an = str(row.get('Attendance_AN', '')).strip() if has_any_annual else ""
 
         pages_html += f"""
         <div class="sheet">
@@ -367,29 +383,36 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                             <tr class="bold" style="background-color:#f9efd2;">
                                 <td colspan="2">योग (Total)</td>
                                 <td colspan="4">{str(total_m_all) if has_any_monthly else ""}</td>
-                                <td colspan="3">{total_hy_all} / {num_subs*100}</td>
-                                <td colspan="3">{f"{total_an_all} / {num_subs*100}" if has_any_annual else ""}</td>
-                                <td colspan="3">{f"{total_grand_all} / {grand_max}" if has_any_annual else ""}</td>
+                                <td colspan="3">{total_hy_all} / {hy_max}</td>
+                                <td colspan="3">{f"{total_an_all} / {hy_max}" if has_any_annual else ""}</td>
+                                <td colspan="3">{f"{total_grand_all} / {num_subs*200}" if has_any_annual else ""}</td>
                                 <td>{overall_grade}</td>
                             </tr>
                         </tbody>
                     </table>
 
+                    <!-- TWO-PART RESULT & SIGNATURE BLOCK (PART 1: HALF-YEARLY, PART 2: ANNUAL) -->
                     <table class="sign-table">
+                        <tr style="background-color:#f3e5be; font-weight:700;">
+                            <td style="width:35%;">अर्द्धवार्षिक परीक्षा विवरण (Part-1)</td>
+                            <td style="width:30%;">विशेष विवरण</td>
+                            <td style="width:35%;">वार्षिक / सम्पूर्ण विवरण (Part-2)</td>
+                        </tr>
                         <tr>
-                            <td style="width:36%; text-align:left;">
-                                <div>उपस्थिति : <b>{row.get('Attendance', '')}</b></div>
-                                <div>परीक्षाफल : <b>{result_status}</b></div>
+                            <td style="text-align:left; vertical-align:top;">
+                                <div>उपस्थिति : <b>{att_hy}</b></div>
+                                <div>परीक्षाफल : <b>{hy_result_txt}</b></div>
                                 <div class="sig-line">ह० कक्षाध्यापक</div>
                                 <div class="sig-line">ह० निरीक्षक</div>
                                 <div class="sig-line">ह० प्रधानाचार्य</div>
                                 <div class="sig-line">ह० अभिभावक</div>
                             </td>
-                            <td style="width:34%; vertical-align:top;">
-                                <b>विशेष विवरण</b>
-                                <div style="margin-top:8px; font-size:8pt;">प्रतिशत: <b>{overall_pct}%</b> | समग्र ग्रेड: <b>{overall_grade}</b></div>
+                            <td style="vertical-align:top;">
+                                <div style="margin-top:6px; font-size:8pt;">{remark_line}</div>
                             </td>
-                            <td style="width:30%; text-align:left; vertical-align:bottom;">
+                            <td style="text-align:left; vertical-align:top;">
+                                <div>उपस्थिति : <b>{att_an}</b></div>
+                                <div>परीक्षाफल : <b>{an_result_txt}</b></div>
                                 <div class="sig-line">ह० कक्षाध्यापक</div>
                                 <div class="sig-line">ह० निरीक्षक</div>
                                 <div class="sig-line">ह० प्रधानाचार्य</div>
@@ -493,8 +516,8 @@ def build_marksheet_html(df, stream_name, is_preview=False):
         .marks-table th {{ background-color: #f3e5be; font-weight: 700; }}
         .left {{ text-align: left; padding-left: 5px !important; }}
         .bold {{ font-weight: 700; }}
-        .sign-table {{ margin-top: 6px; font-size: 8.5pt; }}
-        .sig-line {{ margin-top: 11px; font-weight: 600; }}
+        .sign-table {{ margin-top: 6px; font-size: 8.2pt; }}
+        .sig-line {{ margin-top: 9px; font-weight: 600; }}
         .co-badge {{ background: #7a2020; color: #fff; text-align: center; font-weight: 700; font-size: 10pt; padding: 2px 12px; border-radius: 4px; width: 160px; margin: 0 auto 4px auto; }}
         .co-table td {{ padding: 2.3px 4px; font-size: 8pt; }}
         .cat-row td {{ background-color: #f3e5be; font-weight: 700; }}
