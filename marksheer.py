@@ -38,7 +38,7 @@ STREAM_CONFIG = {
     ]
 }
 
-# ================= FORMULA HELPERS =================
+# ================= FORMULA & DISPLAY HELPERS =================
 def get_grade(marks, max_marks):
     if max_marks <= 0:
         return ""
@@ -52,16 +52,23 @@ def get_grade(marks, max_marks):
     elif pct >= 33: return "D"
     else: return "E"
 
-def to_num(val):
+def parse_cell(val):
+    """
+    Returns (numeric_value, display_string, is_entered)
+    Handles: 'AB', 'ab', 0, '0', numbers, and blank cells.
+    """
+    if pd.isna(val):
+        return 0, "", False
+    s = str(val).strip()
+    if s == "":
+        return 0, "", False
+    if s.upper() == "AB":
+        return 0, "AB", True
     try:
-        if pd.isna(val) or str(val).strip() == "":
-            return 0
-        return int(round(float(val)))
+        num = int(round(float(s)))
+        return num, str(num), True
     except:
-        return 0
-
-def fmt(val):
-    return str(val) if val > 0 else ""
+        return 0, s, True
 
 # ================= FORMULA-BASED EXCEL TEMPLATE GENERATOR =================
 def get_stream_excel_template(stream_name):
@@ -74,13 +81,13 @@ def get_stream_excel_template(stream_name):
         "Address": "Renukoot, Sonbhadra",
     }
     for code, name, has_pr, max_th, max_pr in subjects:
-        sample[f"{code}_M1"] = 0
-        sample[f"{code}_M2"] = 0
-        sample[f"{code}_M3"] = 0
+        sample[f"{code}_M1"] = ""
+        sample[f"{code}_M2"] = ""
+        sample[f"{code}_M3"] = ""
         sample[f"{code}_HY_Th"] = 56 if has_pr else 78
-        sample[f"{code}_HY_Pr"] = 28 if has_pr else 0
-        sample[f"{code}_AN_Th"] = 0
-        sample[f"{code}_AN_Pr"] = 0
+        sample[f"{code}_HY_Pr"] = 28 if has_pr else ""
+        sample[f"{code}_AN_Th"] = ""
+        sample[f"{code}_AN_Pr"] = ""
 
     sample["Moral_Sports_Grade"] = "A"
     for i in range(1, 16):
@@ -107,70 +114,123 @@ def build_marksheet_html(df, stream_name, is_preview=False):
         total_m_all = 0
         total_hy_all = 0
         total_an_all = 0
-        total_grand_th = 0
-        total_grand_pr = 0
         total_grand_all = 0
         
-        has_monthly = False
-        has_annual = False
+        has_any_monthly = False
+        has_any_annual = False
         failed_subjects = 0
 
+        # Pre-check if Monthly or Annual has any entered data (even 0 or AB)
         for code, _, _, _, _ in subjects:
-            if (to_num(row.get(f"{code}_M1")) + to_num(row.get(f"{code}_M2")) + to_num(row.get(f"{code}_M3"))) > 0:
-                has_monthly = True
-            if (to_num(row.get(f"{code}_AN_Th")) + to_num(row.get(f"{code}_AN_Pr"))) > 0:
-                has_annual = True
+            for col_suffix in ["M1", "M2", "M3"]:
+                _, _, ent = parse_cell(row.get(f"{code}_{col_suffix}"))
+                if ent:
+                    has_any_monthly = True
+            for col_suffix in ["AN_Th", "AN_Pr"]:
+                _, _, ent = parse_cell(row.get(f"{code}_{col_suffix}"))
+                if ent:
+                    has_any_annual = True
 
         for idx, (code, sub_name, has_pr, max_th, max_pr) in enumerate(subjects, start=1):
-            m1 = to_num(row.get(f"{code}_M1"))
-            m2 = to_num(row.get(f"{code}_M2"))
-            m3 = to_num(row.get(f"{code}_M3"))
-            m_tot = m1 + m2 + m3
+            # 1. Monthly Test Values (Only for display & monthly total - NOT added to Sampoorn)
+            m1_num, m1_disp, m1_ent = parse_cell(row.get(f"{code}_M1"))
+            m2_num, m2_disp, m2_ent = parse_cell(row.get(f"{code}_M2"))
+            m3_num, m3_disp, m3_ent = parse_cell(row.get(f"{code}_M3"))
             
-            hy_th = to_num(row.get(f"{code}_HY_Th"))
-            hy_pr = to_num(row.get(f"{code}_HY_Pr")) if has_pr else 0
-            hy_tot = hy_th + hy_pr
-            
-            an_th = to_num(row.get(f"{code}_AN_Th"))
-            an_pr = to_num(row.get(f"{code}_AN_Pr")) if has_pr else 0
-            an_tot = an_th + an_pr
-            
-            sub_grand_th = m_tot + hy_th + an_th
-            sub_grand_pr = hy_pr + an_pr
-            sub_grand_tot = sub_grand_th + sub_grand_pr
-            
-            if has_annual:
-                max_possible = 200 + (30 if has_monthly else 0)
-                eval_marks = sub_grand_tot
+            m_any_ent = m1_ent or m2_ent or m3_ent
+            m_tot_num = m1_num + m2_num + m3_num
+            if m_any_ent:
+                if m1_disp == "AB" and m2_disp == "AB" and m3_disp == "AB":
+                    m_tot_disp = "AB"
+                else:
+                    m_tot_disp = str(m_tot_num)
             else:
-                max_possible = 100 + (30 if has_monthly else 0)
-                eval_marks = m_tot + hy_tot
+                m_tot_disp = ""
 
-            grade = get_grade(eval_marks, max_possible)
+            # 2. Half-Yearly Values
+            hy_th_num, hy_th_disp, hy_th_ent = parse_cell(row.get(f"{code}_HY_Th"))
+            if has_pr:
+                hy_pr_num, hy_pr_disp, hy_pr_ent = parse_cell(row.get(f"{code}_HY_Pr"))
+            else:
+                hy_pr_num, hy_pr_disp, hy_pr_ent = 0, "", False
+            
+            hy_any_ent = hy_th_ent or hy_pr_ent
+            hy_tot_num = hy_th_num + hy_pr_num
+            if hy_any_ent:
+                if hy_th_disp == "AB" and (not has_pr or hy_pr_disp == "AB"):
+                    hy_tot_disp = "AB"
+                else:
+                    hy_tot_disp = str(hy_tot_num)
+            else:
+                hy_tot_disp = ""
+
+            # 3. Annual Values
+            an_th_num, an_th_disp, an_th_ent = parse_cell(row.get(f"{code}_AN_Th"))
+            if has_pr:
+                an_pr_num, an_pr_disp, an_pr_ent = parse_cell(row.get(f"{code}_AN_Pr"))
+            else:
+                an_pr_num, an_pr_disp, an_pr_ent = 0, "", False
+            
+            an_any_ent = an_th_ent or an_pr_ent
+            an_tot_num = an_th_num + an_pr_num
+            if an_any_ent:
+                if an_th_disp == "AB" and (not has_pr or an_pr_disp == "AB"):
+                    an_tot_disp = "AB"
+                else:
+                    an_tot_disp = str(an_tot_num)
+            else:
+                an_tot_disp = ""
+
+            # 4. Sampoorn Pariksha (ONLY Half-Yearly + Annual; Monthly Test NOT included)
+            sub_grand_th_num = hy_th_num + an_th_num
+            sub_grand_pr_num = hy_pr_num + an_pr_num
+            sub_grand_tot_num = hy_tot_num + an_tot_num
+
+            if has_any_annual:
+                if has_pr:
+                    grand_th_disp = "AB" if (hy_th_disp == "AB" and an_th_disp == "AB") else str(sub_grand_th_num)
+                    grand_pr_disp = "AB" if (hy_pr_disp == "AB" and an_pr_disp == "AB") else str(sub_grand_pr_num)
+                else:
+                    grand_th_disp = ""
+                    grand_pr_disp = ""
+                
+                if hy_tot_disp == "AB" and an_tot_disp == "AB":
+                    grand_tot_disp = "AB"
+                else:
+                    grand_tot_disp = str(sub_grand_tot_num)
+                
+                eval_marks = sub_grand_tot_num
+                max_possible = 200
+            else:
+                grand_th_disp = ""
+                grand_pr_disp = ""
+                grand_tot_disp = ""
+                eval_marks = hy_tot_num
+                max_possible = 100
+
+            grade = get_grade(eval_marks, max_possible) if (hy_any_ent or an_any_ent) else ""
             if grade == "E":
                 failed_subjects += 1
 
-            total_m_all += m_tot
-            total_hy_all += hy_tot
-            total_an_all += an_tot
-            total_grand_th += sub_grand_th
-            total_grand_pr += sub_grand_pr
-            total_grand_all += sub_grand_tot
+            total_m_all += m_tot_num
+            total_hy_all += hy_tot_num
+            total_an_all += an_tot_num
+            total_grand_all += sub_grand_tot_num
 
             rows_html += f"""
             <tr>
                 <td>{idx}</td>
                 <td class="left">{sub_name}</td>
-                <td>{fmt(m1)}</td><td>{fmt(m2)}</td><td>{fmt(m3)}</td><td class="bold">{fmt(m_tot)}</td>
-                <td>{fmt(hy_th) if has_pr else ''}</td>
-                <td>{fmt(hy_pr) if has_pr else ''}</td>
-                <td class="bold">{fmt(hy_tot)}</td>
-                <td>{fmt(an_th) if has_pr else ''}</td>
-                <td>{fmt(an_pr) if has_pr else ''}</td>
-                <td class="bold">{fmt(an_tot)}</td>
-                <td>{fmt(sub_grand_th) if (has_annual and has_pr) else ''}</td>
-                <td>{fmt(sub_grand_pr) if (has_annual and has_pr) else ''}</td>
-                <td class="bold">{fmt(sub_grand_tot) if has_annual else ''}</td>
+                <td>{m1_disp}</td><td>{m2_disp}</td><td>{m3_disp}</td><td class="bold">{m_tot_disp}</td>
+                <td>{hy_th_disp if has_pr else ''}</td>
+                <td>{hy_pr_disp if has_pr else ''}</td>
+                <td class="bold">{hy_tot_disp}</td>
+                <td>{an_th_disp if has_pr else ''}</td>
+                <td>{an_pr_disp if has_pr else ''}</td>
+                <td class="bold">{an_tot_disp}</td>
+                <td>{grand_th_disp}</td>
+                <td>{grand_pr_disp}</td>
+                <td class="bold">{grand_tot_disp}</td>
                 <td class="bold">{grade}</td>
             </tr>
             """
@@ -182,19 +242,19 @@ def build_marksheet_html(df, stream_name, is_preview=False):
             <td class="left">नैतिक, खेल एवं शारीरिक शिक्षा</td>
             <td></td><td></td><td></td><td></td>
             <td></td><td></td><td class="bold">{moral_grade}</td>
-            <td></td><td></td><td class="bold">{moral_grade if has_annual else ''}</td>
+            <td></td><td></td><td class="bold">{moral_grade if has_any_annual else ''}</td>
             <td></td><td></td><td></td>
             <td class="bold">{moral_grade}</td>
         </tr>
         """
 
         num_subs = len(subjects)
-        if has_annual:
-            grand_max = num_subs * (200 + (30 if has_monthly else 0))
+        if has_any_annual:
+            grand_max = num_subs * 200
             final_obtained = total_grand_all
         else:
-            grand_max = num_subs * (100 + (30 if has_monthly else 0))
-            final_obtained = total_m_all + total_hy_all
+            grand_max = num_subs * 100
+            final_obtained = total_hy_all
 
         overall_pct = round((final_obtained / grand_max) * 100, 2) if grand_max > 0 else 0
         overall_grade = get_grade(final_obtained, grand_max)
@@ -306,10 +366,10 @@ def build_marksheet_html(df, stream_name, is_preview=False):
                             {rows_html}
                             <tr class="bold" style="background-color:#f9efd2;">
                                 <td colspan="2">योग (Total)</td>
-                                <td colspan="4">{fmt(total_m_all)}</td>
+                                <td colspan="4">{str(total_m_all) if has_any_monthly else ""}</td>
                                 <td colspan="3">{total_hy_all} / {num_subs*100}</td>
-                                <td colspan="3">{f"{total_an_all} / {num_subs*100}" if has_annual else ""}</td>
-                                <td colspan="3">{f"{total_grand_all} / {grand_max}" if has_annual else f"{final_obtained} / {grand_max}"}</td>
+                                <td colspan="3">{f"{total_an_all} / {num_subs*100}" if has_any_annual else ""}</td>
+                                <td colspan="3">{f"{total_grand_all} / {grand_max}" if has_any_annual else ""}</td>
                                 <td>{overall_grade}</td>
                             </tr>
                         </tbody>
