@@ -1,288 +1,363 @@
+import streamlit as st
+import pandas as pd
+import base64
+import os
+import streamlit.components.v1 as components
+
+st.set_page_config(page_title="प्रगति-पत्र जनरेटर - ABIC रेणुकूट", layout="wide")
+
+# GitHub repository mein rakhi logo.png ko Base64 mein convert karne ka function
+def get_logo_base64(image_path="logo.png"):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode("utf-8")
+    return ""
+
+logo_b64 = get_logo_base64("logo.png")
+logo_html = (
+    f'<img src="data:image/png;base64,{logo_b64}" class="school-logo" alt="ABIC Logo">'
+    if logo_b64
+    else '<div style="font-weight:bold; color:#7c2d12; margin-bottom:5px;">[logo.png अपलोड करें]</div>'
+)
+
+st.title("📄 प्रगति-पत्र (Marksheet) प्रिंट सिस्टम")
+
+# Sidebar mein Excel/CSV upload ya Manual Entry ka option
+with st.sidebar:
+    st.header("1. डेटा अपलोड करें")
+    uploaded_file = st.file_uploader("Excel (.xlsx) या CSV फाइल चुनें", type=["xlsx", "xls", "csv"])
+    session_year = st.text_input("शैक्षणिक सत्र", value="2026 - 2027")
+
+# Default sample data (jab tak Excel upload na ho)
+student_data = {
+    "name": "ABHIMANYU YADAV",
+    "roll": "1",
+    "house": "MARTAND",
+    "father": "SRILAL YADAV",
+    "mother": "SONA DEVI",
+    "dob": "2008-11-19",
+    "class_sec": "12 B",
+    "mobile": "9889853760",
+    "reg_no": "38940",
+    "aadhaar": "982931653622",
+    "pen": "21473874271",
+    "address": "Renukoot, Sonbhadra (U.P.)"
+}
+
+if uploaded_file is not None:
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+
+        df.columns = df.columns.str.strip()
+        
+        # Pehle column (ya Name column) se student chunein
+        name_col = next((c for c in df.columns if "name" in c.lower() or "नाम" in c), df.columns[0])
+        selected_student = st.sidebar.selectbox("विद्यार्थी चुनें:", df[name_col].astype(str).tolist())
+        row = df[df[name_col].astype(str) == selected_student].iloc[0]
+
+        def get_val(keywords, default=""):
+            for col in df.columns:
+                if any(k in col.lower() for k in keywords):
+                    val = str(row[col])
+                    if val.lower() == "nan":
+                        return ""
+                    # Date mein se 00:00:00 hatane ke liye
+                    return val.replace(" 00:00:00", "").strip()
+            return default
+
+        student_data["name"] = get_val(["student", "name", "छात्र"], "")
+        student_data["roll"] = get_val(["roll", "अनुक्रमांक"], "")
+        student_data["house"] = get_val(["house", "nilay", "निलय"], "")
+        student_data["father"] = get_val(["father", "पिता"], "")
+        student_data["mother"] = get_val(["mother", "माता"], "")
+        student_data["dob"] = get_val(["dob", "birth", "जन्म"], "")
+        student_data["class_sec"] = get_val(["class", "कक्षा"], "")
+        student_data["mobile"] = get_val(["mobile", "phone", "मोबाइल"], "")
+        student_data["reg_no"] = get_val(["reg", "पंजीकरण"], "")
+        student_data["aadhaar"] = get_val(["aadhar", "aadhaar", "आधार"], "")
+        student_data["pen"] = get_val(["pen", "पेन"], "")
+        student_data["address"] = get_val(["address", "पता"], "")
+
+    except Exception as e:
+        st.error(f"फाइल पढ़ने में त्रुटि: {e}")
+
+# HTML + CSS Template (Exact Two-Column Full A4 Landscape)
+html_template = f"""
 <!DOCTYPE html>
 <html lang="hi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>प्रगति-पत्र - आदित्य बिड़ला इण्टरमीडिएट कॉलेज</title>
   <style>
-    * {
+    * {{
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-    }
+    }}
 
-    body {
+    body {{
       font-family: 'Mangal', 'Nirmala UI', 'Noto Sans Devanagari', Arial, sans-serif;
-      background-color: #e5e5e5;
+      background-color: transparent;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 15px;
       color: #2b1d14;
-    }
+    }}
 
-    /* Screen par Print Button (Print mein hide ho jayega) */
-    .no-print {
-      margin-bottom: 15px;
-      display: flex;
-      gap: 12px;
-    }
+    .print-bar {{
+      width: 100%;
+      text-align: center;
+      margin-bottom: 12px;
+    }}
 
-    .btn-print {
+    .btn-print {{
       background-color: #7c2d12;
       color: #ffffff;
       border: none;
-      padding: 10px 24px;
+      padding: 10px 26px;
       font-size: 16px;
       font-weight: bold;
       border-radius: 6px;
       cursor: pointer;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }}
 
-    .btn-print:hover {
+    .btn-print:hover {{
       background-color: #9a3412;
-    }
+    }}
 
-    /* A4 Landscape Full Page Container */
-    .page-sheet {
+    /* A4 Landscape Exact Dimensions */
+    .page-sheet {{
       width: 297mm;
       height: 210mm;
-      background-color: #fdf6e2; /* Light cream/yellowish tint photo jaisa */
-      padding: 8mm;
-      box-shadow: 0 0 12px rgba(0, 0, 0, 0.25);
+      background-color: #fdf6e2;
+      padding: 7mm;
+      border: 1px solid #ccc;
       display: flex;
       justify-content: center;
       align-items: center;
-    }
+    }}
 
-    .outer-border {
+    .outer-border {{
       width: 100%;
       height: 100%;
       border: 2.5px solid #5c3a21;
       padding: 3px;
       display: flex;
-    }
+    }}
 
-    .inner-border {
+    .inner-border {{
       width: 100%;
       height: 100%;
       border: 1px solid #5c3a21;
       display: grid;
       grid-template-columns: 1fr 1fr;
-    }
+    }}
 
-    /* Left & Right Columns */
-    .column {
-      padding: 12mm 10mm;
+    .column {{
+      padding: 10mm 9mm;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-    }
+    }}
 
-    .left-col {
-      border-right: 1.5px solid #5c3a21;
-    }
+    .left-col {{
+      border-right: 1.5px dashed #5c3a21;
+    }}
 
-    /* Left Column Styling */
-    .section-title {
-      font-size: 14px;
+    .section-title {{
+      font-size: 13.5px;
       font-weight: bold;
       color: #5c2818;
       margin-bottom: 6px;
-    }
+    }}
 
-    table.grade-table {
+    table.grade-table {{
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 18px;
       text-align: center;
-      font-size: 12.5px;
-    }
+      font-size: 12px;
+    }}
 
     table.grade-table th,
-    table.grade-table td {
+    table.grade-table td {{
       border: 1px solid #5c3a21;
-      padding: 6px 4px;
-    }
+      padding: 6px 3px;
+    }}
 
-    table.grade-table th {
+    table.grade-table th {{
       font-weight: normal;
-      background-color: rgba(92, 58, 33, 0.05);
-    }
+      background-color: rgba(92, 58, 33, 0.06);
+    }}
 
-    table.grade-table td {
+    table.grade-table td {{
       font-weight: bold;
-    }
+    }}
 
-    .instructions-box {
-      margin-top: 5px;
-    }
-
-    .instructions-header {
+    .instructions-header {{
       text-align: center;
       margin-bottom: 12px;
-    }
+    }}
 
-    .instructions-badge {
+    .instructions-badge {{
       display: inline-block;
-      background-color: #b4533c;
+      background-color: #8c3b2b;
       color: #ffffff;
       font-weight: bold;
       font-size: 14px;
-      padding: 3px 16px;
+      padding: 3px 18px;
       border-radius: 3px;
-    }
+    }}
 
-    .instructions-list {
+    .instructions-list {{
       list-style: none;
-      font-size: 13px;
+      font-size: 12.8px;
       line-height: 1.75;
-    }
+    }}
 
-    .instructions-list li {
+    .instructions-list li {{
       margin-bottom: 8px;
       text-align: justify;
-    }
+    }}
 
-    /* Right Column Styling */
-    .top-meta {
+    .top-meta {{
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      font-size: 11px;
+      font-size: 10.5px;
       text-align: center;
-    }
+    }}
 
-    .meta-box {
+    .meta-box {{
       border: 1px solid #5c3a21;
-      padding: 2px 8px;
+      padding: 2px 7px;
       margin-top: 2px;
       font-weight: bold;
       background-color: #fffdf7;
-    }
+    }}
 
-    .school-header {
+    .school-header {{
       text-align: center;
-      margin-top: 4px;
-    }
+      margin-top: 2px;
+    }}
 
-    .school-logo {
-      width: 72px;
+    .school-logo {{
+      width: 68px;
       height: auto;
       display: block;
-      margin: 0 auto 6px auto;
-    }
+      margin: 0 auto 4px auto;
+    }}
 
-    .school-name {
-      font-size: 21px;
+    .school-name {{
+      font-size: 20px;
       font-weight: bold;
       color: #5c2818;
-      letter-spacing: 0.3px;
-    }
+    }}
 
-    .school-address {
-      font-size: 14px;
+    .school-address {{
+      font-size: 13.5px;
       font-weight: bold;
       color: #5c2818;
-      margin-top: 2px;
-    }
+      margin-top: 1px;
+    }}
 
-    .report-badge {
+    .report-badge {{
       display: inline-block;
-      background-color: #b4533c;
+      background-color: #8c3b2b;
       color: #ffffff;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: bold;
       padding: 3px 22px;
       border-radius: 4px;
-      margin: 8px 0 6px 0;
-    }
+      margin: 6px 0 4px 0;
+    }}
 
-    .session-text {
-      font-size: 15px;
+    .session-text {{
+      font-size: 14.5px;
       font-weight: bold;
       color: #3b2314;
-    }
+    }}
 
-    /* Student Details Form Lines */
-    .student-details {
-      margin-top: 10px;
-      font-size: 13.5px;
-      line-height: 2.05;
-    }
+    .student-details {{
+      margin-top: 8px;
+      font-size: 13px;
+      line-height: 2.0;
+    }}
 
-    .field-row {
+    .field-row {{
       display: flex;
       align-items: baseline;
       width: 100%;
-    }
+    }}
 
-    .field-label {
+    .field-label {{
       white-space: nowrap;
       font-weight: bold;
       color: #4a2c18;
-    }
+    }}
 
-    .field-value {
+    .field-value {{
       flex: 1;
       border-bottom: 1.5px dotted #5c3a21;
       padding-left: 8px;
       font-weight: bold;
       color: #1e3a8a;
-      min-height: 20px;
-    }
+      min-height: 19px;
+    }}
 
-    .field-half {
+    .field-half {{
       display: flex;
       align-items: baseline;
       width: 50%;
-    }
+    }}
 
-    /* Exact Full A4 Landscape Print Rules */
-    @media print {
-      @page {
+    /* Full Page A4 Landscape Print Rules */
+    @media print {{
+      @page {{
         size: A4 landscape;
         margin: 0;
-      }
+      }}
 
-      body {
-        background: none;
-        padding: 0;
-        margin: 0;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-      }
-
-      .no-print {
-        display: none !important;
-      }
-
-      .page-sheet {
+      html, body {{
         width: 297mm;
         height: 210mm;
-        box-shadow: none;
-        margin: 0;
-        padding: 6mm;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fdf6e2 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }}
+
+      .print-bar {{
+        display: none !important;
+      }}
+
+      .page-sheet {{
+        width: 297mm !important;
+        height: 210mm !important;
+        border: none !important;
+        padding: 6mm !important;
+        margin: 0 !important;
         page-break-after: avoid;
         page-break-inside: avoid;
-      }
-    }
+      }}
+    }}
   </style>
 </head>
 <body>
 
-  <!-- Print Button -->
-  <div class="no-print">
-    <button class="btn-print" onclick="window.print()">🖨️ पूरा पेज प्रिंट करें (A4 Landscape)</button>
+  <div class="print-bar">
+    <button class="btn-print" onclick="window.print()">🖨️ पूरा पेज प्रिंट करें (Full A4 Landscape)</button>
   </div>
 
-  <!-- Marksheet Outer A4 Sheet -->
   <div class="page-sheet">
     <div class="outer-border">
       <div class="inner-border">
 
-        <!-- LEFT COLUMN: Grading System & General Instructions -->
+        <!-- LEFT COLUMN -->
         <div class="column left-col">
           <div>
             <div class="section-title">शैक्षिक मूल्यांकन ग्रेडिंग सिस्टम (प्रतिशत में)</div>
@@ -328,7 +403,7 @@
             </table>
           </div>
 
-          <div class="instructions-box">
+          <div>
             <div class="instructions-header">
               <span class="instructions-badge">-: सामान्य निर्देश :-</span>
             </div>
@@ -340,7 +415,7 @@
           </div>
         </div>
 
-        <!-- RIGHT COLUMN: School Header, Logo & Student Details -->
+        <!-- RIGHT COLUMN -->
         <div class="column right-col">
           <div class="top-meta">
             <div>
@@ -354,75 +429,74 @@
           </div>
 
           <div class="school-header">
-            <!-- GitHub Repository mein rakhi logo.png file -->
-            <img src="./logo.png" alt="ABIC Renukoot Logo" class="school-logo">
+            {logo_html}
             <div class="school-name">आदित्य बिड़ला इण्टरमीडिएट कॉलेज</div>
             <div class="school-address">रेणुकूट, सोनभद्र (उ०प्र०)</div>
             <div class="report-badge">प्रगति-पत्र</div>
-            <div class="session-text">शैक्षणिक सत्र 2025 - 2026</div>
+            <div class="session-text">शैक्षणिक सत्र {session_year}</div>
           </div>
 
           <div class="student-details">
             <div class="field-row">
-              <span class="field-label">छात्र / छात्रा का नाम</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">छात्र / छात्रा का नाम :</span>
+              <span class="field-value" contenteditable="true">{student_data['name']}</span>
             </div>
 
             <div class="field-row">
               <div class="field-half">
-                <span class="field-label">अनुक्रमांक</span>
-                <span class="field-value" contenteditable="true"></span>
+                <span class="field-label">अनुक्रमांक :</span>
+                <span class="field-value" contenteditable="true">{student_data['roll']}</span>
               </div>
               <div class="field-half" style="padding-left: 10px;">
-                <span class="field-label">निलय</span>
-                <span class="field-value" contenteditable="true"></span>
+                <span class="field-label">निलय :</span>
+                <span class="field-value" contenteditable="true">{student_data['house']}</span>
               </div>
             </div>
 
             <div class="field-row">
-              <span class="field-label">पिता का नाम</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">पिता का नाम :</span>
+              <span class="field-value" contenteditable="true">{student_data['father']}</span>
             </div>
 
             <div class="field-row">
-              <span class="field-label">माता का नाम</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">माता का नाम :</span>
+              <span class="field-value" contenteditable="true">{student_data['mother']}</span>
             </div>
 
             <div class="field-row">
               <div class="field-half">
-                <span class="field-label">जन्मतिथि</span>
-                <span class="field-value" contenteditable="true"></span>
+                <span class="field-label">जन्मतिथि :</span>
+                <span class="field-value" contenteditable="true">{student_data['dob']}</span>
               </div>
               <div class="field-half" style="padding-left: 10px;">
-                <span class="field-label">कक्षा एवं वर्ग</span>
-                <span class="field-value" contenteditable="true"></span>
+                <span class="field-label">कक्षा एवं वर्ग :</span>
+                <span class="field-value" contenteditable="true">{student_data['class_sec']}</span>
               </div>
             </div>
 
             <div class="field-row">
-              <span class="field-label">मोबाइल नंबर</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">मोबाइल नंबर :</span>
+              <span class="field-value" contenteditable="true">{student_data['mobile']}</span>
             </div>
 
             <div class="field-row">
-              <span class="field-label">छात्र पंजीकरण संख्या</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">छात्र पंजीकरण संख्या :</span>
+              <span class="field-value" contenteditable="true">{student_data['reg_no']}</span>
             </div>
 
             <div class="field-row">
-              <span class="field-label">आधार संख्या</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">आधार संख्या :</span>
+              <span class="field-value" contenteditable="true">{student_data['aadhaar']}</span>
             </div>
 
             <div class="field-row">
-              <span class="field-label">पेन संख्या (PEN No.)</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">पेन संख्या (PEN No.) :</span>
+              <span class="field-value" contenteditable="true">{student_data['pen']}</span>
             </div>
 
             <div class="field-row">
-              <span class="field-label">पता</span>
-              <span class="field-value" contenteditable="true"></span>
+              <span class="field-label">पता :</span>
+              <span class="field-value" contenteditable="true">{student_data['address']}</span>
             </div>
           </div>
         </div>
@@ -433,3 +507,7 @@
 
 </body>
 </html>
+"""
+
+# Streamlit mein isolated iframe ke andar render karein taaki print bilkul clean aur full-page aaye
+components.html(html_template, height=860, scrolling=True)
